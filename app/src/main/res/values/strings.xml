@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MyQRApp</string>
+    <string name="aici_incpe_decodarea"><![CDATA[AICI INCPE :DECODAREA ->]]></string>
+    <string name="decoded_text">Decoded Text</string>
+</resources>

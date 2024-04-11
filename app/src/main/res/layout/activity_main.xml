@@ -30,5 +30,12 @@
         android:layout_centerInParent="true"
         android:text="Open QR Scan" />
 
+    <Button
+        android:id="@+id/logout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/button_scan_qr"
+        android:layout_centerInParent="true"
+        android:text="Logout" />
 
 </RelativeLayout>

@@ -9,9 +9,11 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"
+
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
+    <uses-permission
+        android:name="android.permission.INTERNET" />
 
     <application
         android:usesCleartextTraffic="true"
@@ -22,6 +24,58 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
         <activity android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="landscape"
+            tools:replace="android:screenOrientation" />
+
+
+        <activity android:name=".GenerateQR"
+            android:parentActivityName=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".FilesSystem"
+            android:parentActivityName=".GenerateQR"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".GenerateQRFile"
+            android:parentActivityName=".FilesSystem"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".GenerateQRText"
+            android:parentActivityName=".GenerateQR"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".ScanQR"
+            android:parentActivityName=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".Login"
             tools:ignore="MissingClass"
             android:exported="true">
             <intent-filter>
@@ -30,19 +84,8 @@
             </intent-filter>
         </activity>
 
-        <activity android:name="com.journeyapps.barcodescanner.CaptureActivity"
-            android:screenOrientation="sensorLandscape" />
-
-        <activity android:name=".GenerateQR"
-            tools:ignore="MissingClass"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".ScanQR"
-            tools:ignore="MissingClass"
+        <activity android:name=".Register"
+            android:parentActivityName=".Login"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.DEFAULT" />

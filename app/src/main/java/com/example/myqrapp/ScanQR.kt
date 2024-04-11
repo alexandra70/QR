@@ -108,10 +108,12 @@ class ScanQR : AppCompatActivity(), ZXingScannerView.ResultHandler {
             qrR = 0;
         }
         setContentView(R.layout.activity_scan_qr)
+        supportActionBar!!.setDisplayHomeAsUpEnabled(true)
+        supportActionBar!!.title = "SCAN QR"
 
-        val button: Button = findViewById(R.id.btnOpenMain)
+        val button: Button = findViewById(R.id.restart_scanning)
         button.setOnClickListener {
-            val i = Intent(this@ScanQR, MainActivity::class.java)
+            val i = Intent(this@ScanQR, ScanQR::class.java)
             startActivity(i)
         }
 

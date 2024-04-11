@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.jetbrainsKotlinAndroid)
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -66,6 +67,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.material)
+    implementation(libs.firebase.auth.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -81,10 +83,21 @@ dependencies {
     implementation("me.dm7.barcodescanner:zxing:1.8.1")
     implementation("com.github.androidmads:QRGenerator:1.0.1")
 
-
-
     testImplementation("junit:junit:4.13.2")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.2")
 
-}
+    implementation("androidx.fragment:fragment-ktx:1.3.0")
+    implementation("androidx.activity:activity-ktx:1.3.0")
+
+    // retrofit
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    // GSON
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    // coroutine
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2")
+
+    implementation("com.google.firebase:firebase-auth:21.0.1")
+
+    }

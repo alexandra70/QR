@@ -1,0 +1,279 @@
+package com.example.myqrapp
+
+import android.annotation.SuppressLint
+import android.os.Bundle
+import android.util.Log
+import android.util.Size
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.TimeSource
+
+open class ReaderQR : AppCompatActivity() {
+
+    val timeSource = TimeSource.Monotonic /* for sleep (alternatives?)) */
+    private lateinit var previewView: PreviewView
+    private lateinit var resultTextView: TextView
+    private lateinit var cameraExecutor: ExecutorService
+    private lateinit var barcodeScanner: BarcodeScanner
+    private var cameraProvider: ProcessCameraProvider? = null
+
+    var latestAnalyzedTimestamp = 0L;
+    /*
+    A not yet analyzed first frame
+    After the first frame is read and the time is extracted this should
+    have the value eq to one - that means the next first-frame-seq will be dropped
+    */
+    //var analyzedFirstImage = 0;
+
+    private val firstFrame = AtomicInteger(0)
+    private val nrPckToProcess = AtomicInteger(0)
+    var timeBeforeSeq = AtomicInteger(0)
+
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_reader_qr)
+
+        previewView = findViewById(R.id.previewView)
+        resultTextView = findViewById(R.id.resultTextView)
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        //barcodescanner to process the image
+        barcodeScanner = BarcodeScanning.getClient()
+
+        val requestPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission())
+        {
+                isGranted: Boolean ->
+            if(isGranted) {
+                lifecycleScope.launch {
+                    startCamera()
+                }
+            } else {
+                resultTextView.text = "Camera Permission is required"
+            }
+        }
+        requestPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+    }
+
+    @SuppressLint("UnsafeOptInUsageError")
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+        cameraProviderFuture.addListener({
+            lifecycleScope.launch {
+                try {
+                    cameraProvider = cameraProviderFuture.get()
+
+                    bindCameraUseCases() //Suspension functions can be called only within coroutine body
+
+                } catch (exc: Exception) {
+                    Log.e("Camera", "INIT CAMERA ERROR - 4?", exc)
+                    resultTextView.text = "Error: camera not working"
+                }
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun bindCameraUseCases() {
+        val provider = cameraProvider ?: return
+
+        try {
+            // ?
+            provider.unbindAll()
+
+            val screenSize = Size(1280, 720)
+            //if this size for the screen is not available then use no other resolution strategy => FALLBACK_RULE_NONE
+            val resolutionSelector = ResolutionSelector.Builder()
+                .setResolutionStrategy(
+                    ResolutionStrategy(
+                        screenSize,
+                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER
+                    )
+                )
+                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                .build()
+
+            //to allow live camera feedback to the screen
+            //attach the preview of the camera to the UI preview = > automatic detection of qr code
+            val preview = Preview.Builder()
+                .setResolutionSelector(resolutionSelector)
+                .build()
+                .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+
+
+            val imageAnalyzer = ImageAnalysis.Builder()
+                .setResolutionSelector(resolutionSelector)
+                //.setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_BLOCK_PRODUCER)
+                .setImageQueueDepth(1) //new
+                .build()
+                .also {
+                    it.setAnalyzer(cameraExecutor) { proxy ->
+
+                        if (!isDestroyed) {
+                            if ((firstFrame.get() == 0)) {
+                                lifecycleScope.launch {
+
+                                    processImageProxy(proxy)
+                                    println("DAR AICI CUM ARATA dar dupa prosess?/? " + timeBeforeSeq.get())
+                                    println("proxy.imageInfo.timestamp -> " + proxy.imageInfo.timestamp)
+                                    println("latestAnalyzedTimestamp -> " + firstFrame.get())
+                                    delay(timeBeforeSeq.get().toLong())
+                                }
+                            } else if ((firstFrame.get() == 0) && (nrPckToProcess.get() > 0)) {
+                                lifecycleScope.launch {
+                                    val mark = timeSource.markNow()
+
+                                    //processImageProxy(proxy)
+
+                                    //decrease number of pck left
+                                    var nrPckToProcessAux = nrPckToProcess.get()
+                                    nrPckToProcessAux = nrPckToProcessAux - 1
+                                    nrPckToProcess.set(nrPckToProcessAux);
+
+                                    println("mai am vreun pachet de procesat?? " + nrPckToProcess)
+                                    delay(3000 - (timeSource.markNow() - mark).inWholeMilliseconds)
+                                }
+                            }
+                        }
+                    }
+                }
+
+            //select default camera - > back camera
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            //link image to the preview to the image-analyzer(process frames to analyze simultaneously)
+            provider.bindToLifecycle(this,
+                cameraSelector, preview, imageAnalyzer)
+
+        } catch (exc: Exception) {
+            Log.e("Camera", "err?? ", exc)
+        }
+    }
+
+    /* it is called at EACH frame read by the camera */
+    @OptIn(ExperimentalGetImage::class)
+    private fun processImageProxy(imageProxy: ImageProxy) {
+        try {
+            val mediaImage = imageProxy.image ?: run {
+                imageProxy.close()
+                return
+            }
+
+            //image is converted into an input image
+            //rotationDegrees used for accurate scan - image is rotated correctly
+            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+            //process the image
+            barcodeScanner.process(image)
+                .addOnSuccessListener { barcodes ->
+                    if (isDestroyed) return@addOnSuccessListener
+                    barcodes.firstOrNull()?.rawValue?.let { result ->
+                        runOnUiThread {
+                            resultTextView.text = "res: $result"
+
+                            if(firstFrame.get() == 0) {
+                                /* Store the time for the first frame */
+                                /* Scanning process should start after timeBeforeSeq + latestAnalyzedTimestamp is >= than
+                                * the time stamp of current analyzed photo */
+                                //latestAnalyzedTimestamp = imageProxy.imageInfo.timestamp
+                                //analyzedFirstImage = 1 /* Just one frame(for pck 0) will be analyzed */
+                                //processFirstFrame(result)
+
+                                val timeAux = extractTime(result)
+                                timeBeforeSeq.set(timeAux)
+                                println("am setat yimpul la??" + timeBeforeSeq.get())
+                                firstFrame.set(1)
+                                nrPckToProcess.set(extractNrPck(result))
+
+                                imageProxy.close()
+                            }
+                            else if((firstFrame.get() == 1) && (nrPckToProcess.get() > 0)) {
+                                //val pck = PackageData.deserializePck(result)
+                                println("content of the package - have to decide if dao will be used here..")
+                                println(result)
+
+
+                                imageProxy.close()
+                            }
+                        }
+                    }
+                }
+                .addOnFailureListener {
+                    if (!isDestroyed) {
+                        resultTextView.text = "Failed to scan qr code"
+                    }
+                }
+            //.addOnCompleteListener {
+            //clean up memory and allow nxt frame to pe processed
+            //after the task was completed the addOnCompleteListener is called
+            //    imageProxy.close()
+            //}
+        } catch (e: Exception) {
+            imageProxy.close()
+        }
+
+        if (!isDestroyed) {
+            imageProxy.close()
+        }
+    }
+
+    override fun onDestroy() {
+
+        super.onDestroy()
+        cameraExecutor.shutdown()
+        cameraExecutor.awaitTermination(1, TimeUnit.SECONDS)
+        cameraProvider?.unbindAll()
+        barcodeScanner.close()
+    }
+
+    private fun processFirstFrame(scannedText: String) {
+
+        val timeAux = extractTime(scannedText)
+        timeBeforeSeq.set(timeAux)
+        println("am setat yimpul la??" + timeBeforeSeq.get())
+        firstFrame.set(1)
+        nrPckToProcess.set(extractNrPck(scannedText))
+        //firstFrame = 1//first pck received
+    }
+
+    private fun extractTime(scannedText: String): Int {
+
+        val pck = PackageData.deserializePck(scannedText)
+        val indTime = pck.content.indexOf("Time:") + 5
+        val indNrPck = pck.content.indexOf("NrPck:") // len = 6
+        println(" aici un pck " + pck.pckId.toString() + " " + pck.crc + " " + pck.length + " " + pck.content)
+
+        return pck.content.substring(indTime, indNrPck).toInt()
+    }
+
+    private fun extractNrPck(scannedText: String): Int {
+
+        val pck = PackageData.deserializePck(scannedText)
+        return pck.content.substringAfterLast("NrPck:").toInt()
+    }
+}

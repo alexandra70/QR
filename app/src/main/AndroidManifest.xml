@@ -2,15 +2,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-feature
 
+    <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
-
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+
         tools:ignore="ScopedStorage" />
     <uses-permission
         android:name="android.permission.INTERNET" />
@@ -23,76 +31,85 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+
+
+        <!-- Set custom default icon. This is used when no icon is set for incoming notification messages.
+     See README(https://goo.gl/l4GJaQ) for more. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/qr_photo" />
+        <!-- Set color used with incoming notification messages. This is used when no color is set for the incoming
+             notification message. See README(https://goo.gl/6BKBk7) for more. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/purple_500" />
+
         <activity android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name="com.journeyapps.barcodescanner.CaptureActivity"
-            android:screenOrientation="landscape"
-            tools:replace="android:screenOrientation" />
-
-
-        <activity android:name=".GenerateQR"
-            android:parentActivityName=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".FilesSystem"
-            android:parentActivityName=".GenerateQR"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".GenerateQRFile"
-            android:parentActivityName=".FilesSystem"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".GenerateQRText"
-            android:parentActivityName=".GenerateQR"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".ScanQR"
-            android:parentActivityName=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".Login"
-            tools:ignore="MissingClass"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+                    <activity android:name=".ReaderQR"
+                        android:parentActivityName=".MainActivity"
+                        android:exported="true"
+                        android:hardwareAccelerated="true" >
+                        <intent-filter>
+                            <action android:name="android.intent.action.DEFAULT" />
+                        </intent-filter>
+                    </activity>
+                                 <activity android:name=".ScanQR"
+                                    android:parentActivityName=".ReaderQR"
+                                    android:exported="true">
+                                    <intent-filter>
+                                        <action android:name="android.intent.action.DEFAULT" />
+                                    </intent-filter>
+                                </activity>
+                    <activity android:name=".GenerateQR"
+                        android:parentActivityName=".MainActivity"
+                        android:exported="true">
+                        <intent-filter>
+                            <action android:name="android.intent.action.DEFAULT" />
+                        </intent-filter>
+                    </activity>
+                                <activity android:name=".GenerateQRFile"
+                                    android:parentActivityName=".FilesSystem"
+                                    android:exported="true">
+                                    <intent-filter>
+                                        <action android:name="android.intent.action.DEFAULT" />
+                                    </intent-filter>
+                                </activity>
 
-        <activity android:name=".Register"
-            android:parentActivityName=".Login"
+                                <activity android:name=".GenerateQRText"
+                                    android:parentActivityName=".GenerateQR"
+                                    android:exported="true">
+                                    <intent-filter>
+                                        <action android:name="android.intent.action.DEFAULT" />
+                                    </intent-filter>
+                                </activity>
+        <service
+            android:name=".MyFirebaseMessagingService"
+            android:enabled="true"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.DEFAULT" />
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
             </intent-filter>
-        </activity>
+        </service>
 
+        <activity android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="landscape"
+            tools:replace="android:screenOrientation" />
 
+        <receiver
+            android:name=".LowBatteryBroadcastReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BATTERY_LOW" />
+                <action android:name="android.intent.action.BATTERY_OKAY" />
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>

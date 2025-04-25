@@ -3,6 +3,7 @@ package com.example.myqrapp
 import android.annotation.SuppressLint
 import android.content.ContentValues.TAG
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.text.TextUtils
 import android.util.Log
@@ -10,13 +11,15 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.auth.FirebaseAuth
+import androidx.fragment.app.Fragment
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 
 class Login : AppCompatActivity() {
 
+    lateinit var receiver: AirplaneModeChangedReceiver
 
-    private lateinit var auth: FirebaseAuth
-
+    var auth = Firebase.auth
 
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -24,7 +27,7 @@ class Login : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
 
-        auth = FirebaseAuth.getInstance()
+        Toast.makeText(this@Login, "Please Enter Email and Password to login", Toast.LENGTH_SHORT).show()
 
         val emailEdt = findViewById<EditText>(R.id.email)
         val passwordEdt = findViewById<EditText>(R.id.password)
@@ -43,15 +46,11 @@ class Login : AppCompatActivity() {
                 auth.signInWithEmailAndPassword(email.toString().trim(), password.toString().trim())
                     .addOnCompleteListener(this) { task ->
                         if (task.isSuccessful) {
-                            // Sign in success, update UI with the signed-in user's information
                             Log.d(TAG, "createUserWithEmail:success" + email.toString().trim()
                                             + password.toString().trim())
-                            val user = auth.currentUser
-                            //aici se deschide main activity
                             val i = Intent(this@Login, MainActivity::class.java)
                             startActivity(i)
                         } else {
-                            // If sign in fails, display a message to the user.
                             Log.w(TAG, "createUserWithEmail:failure" + email.toString().trim()
                                     + password.toString().trim(), task.exception)
                             Toast.makeText(
@@ -65,9 +64,37 @@ class Login : AppCompatActivity() {
         }
 
         registerBtn.setOnClickListener {
-            val intent = Intent(this@Login, Register::class.java)
-            startActivity(intent)
+            replaceFragment(Register())
         }
+
+        receiver = AirplaneModeChangedReceiver()
+    }
+
+    fun getActivityEditEmail(): EditText {
+        return findViewById<EditText>(R.id.email)
+    }
+
+    fun getActivityEditPassword(): EditText {
+        return findViewById<EditText>(R.id.password)
+    }
+
+    fun getActivityEditRegisterButton(): Button {
+        return findViewById<Button>(R.id.btnRegister)
+    }
+
+    private fun replaceFragment(fragment: Fragment) {
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragment_register, fragment)
+            .commitNow()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        registerReceiver(receiver, IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED))
+    }
+    override fun onStop() {
+        super.onStop()
+        unregisterReceiver(receiver)
     }
 
 

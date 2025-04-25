@@ -1,6 +1,6 @@
 [versions]
-agp = "8.3.0"
-kotlin = "1.9.0"
+agp = "8.3.2"
+kotlin = "2.0.0"
 coreKtx = "1.12.0"
 junit = "4.13.2"
 junitVersion = "1.1.5"
@@ -14,6 +14,15 @@ material = "1.11.0"
 firebaseAuthKtx = "22.3.1"
 googleServices = "4.4.1"
 firebaseAuth = "22.3.1"
+googleGmsGoogleServices = "4.4.1"
+firebaseAnalytics = "22.0.0"
+composePreviewRenderer = "0.0.1-alpha01"
+firebaseMessagingKtx = "24.0.0"
+firebaseMessaging = "24.0.0"
+junitKtx = "1.1.5"
+firebaseCrashlyticsBuildtools = "3.0.0"
+roomCommon = "2.6.1"
+playServicesLocation = "21.2.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,8 +45,18 @@ material = { group = "com.google.android.material", name = "material", version.r
 firebase-auth-ktx = { group = "com.google.firebase", name = "firebase-auth-ktx", version.ref = "firebaseAuthKtx" }
 google-services = { group = "com.google.gms", name = "google-services", version.ref = "googleServices" }
 firebase-auth = { group = "com.google.firebase", name = "firebase-auth", version.ref = "firebaseAuth" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics", version.ref = "firebaseAnalytics" }
+compose-preview-renderer = { group = "com.android.tools.compose", name = "compose-preview-renderer", version.ref = "composePreviewRenderer" }
+firebase-messaging-ktx = { group = "com.google.firebase", name = "firebase-messaging-ktx", version.ref = "firebaseMessagingKtx" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebaseMessaging" }
+androidx-junit-ktx = { group = "androidx.test.ext", name = "junit-ktx", version.ref = "junitKtx" }
+firebase-crashlytics-buildtools = { group = "com.google.firebase", name = "firebase-crashlytics-buildtools", version.ref = "firebaseCrashlyticsBuildtools" }
+androidx-room-common = { group = "androidx.room", name = "room-common", version.ref = "roomCommon" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
 jetbrainsKotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+googleGmsGoogleServices = { id = "com.google.gms.google-services", version.ref = "googleGmsGoogleServices" }
 
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

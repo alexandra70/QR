@@ -6,36 +6,39 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".MainActivity">
+
     <TextView
+        android:id="@+id/name_menu"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="40dp"
         android:text="QR MENU"
         android:textColor="@android:color/holo_green_dark"
         android:textSize="24sp"
         android:textStyle="bold" />
+
     <Button
         android:id="@+id/button_generate_qr"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_centerInParent="true"
+        android:layout_below="@id/name_menu"
+        android:layout_marginTop="25dp"
         android:text="Open QR Generate" />
 
     <Button
-        android:id="@+id/button_scan_qr"
+        android:id="@+id/button_read_qr"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_above="@id/button_generate_qr"
-        android:layout_centerInParent="true"
-        android:text="Open QR Scan" />
+        android:layout_below="@id/button_generate_qr"
+        android:layout_marginTop="95dp"
+        android:text="Read QR" />
 
     <Button
         android:id="@+id/logout"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_above="@id/button_scan_qr"
-        android:layout_centerInParent="true"
+        android:layout_below="@id/button_read_qr"
+        android:layout_marginTop="98dp"
         android:text="Logout" />
+
 
 </RelativeLayout>

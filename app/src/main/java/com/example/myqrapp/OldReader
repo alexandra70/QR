@@ -1,0 +1,120 @@
+package com.example.myqrapp
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Button
+import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.example.myqrapp.databinding.ActivityReaderQrBinding
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
+
+open class ReaderQR : AppCompatActivity() {
+
+    var used: Boolean = false
+    var nrPck = 0
+    private lateinit var binding: ActivityReaderQrBinding
+    private lateinit var readQrLauncher: ActivityResultLauncher<Intent>
+    var time = 0
+    var nrPckToProcess = 0
+    var buffer = "init"
+
+
+
+    @SuppressLint("MissingInflatedId")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityReaderQrBinding .inflate(layoutInflater)
+        setContentView(binding.root)
+        setupListeners()
+    }
+
+    private fun setupListeners() {
+        val button1: Button = findViewById(R.id.button_scan_qr)
+        button1.setOnClickListener {
+            val intent = Intent(this, ScanQR::class.java)
+            readQrLauncher.launch(intent)
+        }
+
+        /* Inițializează scanQrLauncher. La apelare => handleScannedResult Când utilizatorul scanează un cod QR, handleResult este apelat. Textul scanat este salvat în SharedPreferences (opțional) și trimis înapoi la activitatea principală prin Intent.Activitatea ScanQR se închide, iar activitatea principală (MainActivity) primește rezultatul. */
+        readQrLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    val scannedBytes = result.data?.getStringExtra("scannedBytes")
+
+                    if (!scannedBytes.isNullOrEmpty()) {
+                        println("ce1" + scannedBytes)
+                        lifecycleScope.launch {
+                            handleScannedResult(scannedBytes) // Procesează textul
+                        }
+                    }
+                } else {
+                    println("result.resultCode = " + result.resultCode)
+                }
+            }
+    }
+
+    private suspend fun handleScannedResult(scannedText: String) {
+        Toast.makeText(this, "Scanned: $scannedText", Toast.LENGTH_SHORT).show()
+
+        if (nrPck == 0) { /* Procesează primul pachet */
+            //extract the time
+            time = extractTime(scannedText)
+            nrPckToProcess = extractNrPck(scannedText)
+            println("DUPA CAT TREBUIE SA INCEP SA CITESC?? " + time)
+            println("cate as avea de procesat? " + nrPckToProcess)
+
+            //process the pck
+            if (nrPckToProcess > 0) {
+                processSeq(nrPckToProcess)
+                time = 0 //send again???
+            }
+        }
+    }
+
+    private fun openReader() {
+        val intent = Intent(this, ScanQR::class.java)
+        readQrLauncher.launch(intent)
+    }
+
+    private suspend fun processSeq(nrPckToProcess: Int) {
+
+        println("inainte de delayil mai mare - > de " + time.milliseconds)
+        delay(time.milliseconds)
+
+        println("dupa delay  ")
+        var i = nrPckToProcess
+        val timeSource = TimeSource.Monotonic
+        while(i != 0) {
+            val mark = timeSource.markNow()
+            openReader()
+            println(buffer+"texttext")
+            i--
+            delay(1000 - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
+        }
+    }
+
+    private fun extractTime(scannedText: String): Int {
+        val pck = PackageData.deserializePck(scannedText)
+
+        println(" aici un pck " + pck.pckId.toString() + " " + pck.crc + " " + pck.length + " " + pck.content)
+
+        val indTime = pck.content.indexOf("Time:") + 5
+        val indNrPck = pck.content.indexOf("NrPck:") // len = 6
+
+        return pck.content.substring(indTime, indNrPck).toInt()
+    }
+
+    private fun extractNrPck(scannedText: String): Int {
+        val pck = PackageData.deserializePck(scannedText)
+
+        return pck.content.substringAfterLast("NrPck:").toInt()
+    }
+
+}

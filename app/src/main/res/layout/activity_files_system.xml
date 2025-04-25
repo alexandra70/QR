@@ -11,15 +11,22 @@
         android:id="@+id/chooseFile"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="File from file system"
-        />
+        android:text="File from file system" />
 
     <Button
         android:id="@+id/encodeDataFromFile"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_below="@id/chooseFile"
-        android:text="Encode file content"
+        android:layout_marginTop="-1dp"
+        android:text="Encode file content" />
+
+    <ImageView
+        android:id="@+id/imageQR"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/encodeDataFromFile"
+        android:layout_centerHorizontal="true"
         />
 
 
@@ -27,7 +34,7 @@
         android:id="@+id/scrollBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@id/encodeDataFromFile"
+        android:layout_below="@id/imageQR"
         android:layout_alignParentEnd="true"
         >
 
@@ -42,6 +49,8 @@
             android:textStyle="bold"
             app:layout_constraintLeft_toLeftOf="parent"
             app:layout_constraintRight_toRightOf="parent" />
+
+
 
     </ScrollView>
 

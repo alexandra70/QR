@@ -53,4 +53,11 @@
         android:layout_marginTop="30dp"
         android:layout_marginEnd="10dp"
         android:text="Register" />
+
+    <FrameLayout
+        android:id="@+id/fragment_register"
+        android:layout_below="@id/btnRegister"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
 </RelativeLayout>

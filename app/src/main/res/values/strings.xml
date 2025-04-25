@@ -10,4 +10,8 @@
     <string name="enter_youe_email">Enter your Email</string>
     <!--string for logout button-->
     <string name="logout">Logout</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="qr_scan">QR SCAN</string>
+    <string name="hello_hello">Hello hello</string>
 </resources>

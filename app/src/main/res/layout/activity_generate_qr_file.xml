@@ -1,34 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
 
-    <RelativeLayout
+    <Button
+        android:id="@+id/chooseFile"
+        android:layout_width="157dp"
+        android:layout_height="wrap_content"
+        android:text="Choose File" />
+
+    <Button
+        android:id="@+id/encodeDataFromFile"
+        android:layout_width="157dp"
+        android:layout_height="wrap_content"
+        android:text="Encode Data from File" />
+
+    <TextView
+        android:id="@+id/filePrintableData"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" >
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:text="File data will appear here" />
 
-        <TextView
-            android:id="@+id/titleGenerateQRFile"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_centerHorizontal="true"
-            android:layout_marginTop="20dp"
-            android:text="Gen seq qr"
-            android:textColor="@android:color/holo_green_dark"
-            android:textSize="24sp"
-            android:textStyle="bold" />
-
-        <!--We are using this image
-            view to display our QR code-->
-        <ImageView
-            android:id="@+id/idIVQrcode"
-            android:layout_width="300dp"
-            android:layout_height="300dp"
-            android:layout_centerHorizontal="true"
-            android:layout_marginTop="50dp"
-            android:contentDescription="QR Code" />
-
-    </RelativeLayout>
-</ScrollView>
+    <ImageView
+        android:id="@+id/imageQR"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:contentDescription="QR Code Image" />
+</LinearLayout>

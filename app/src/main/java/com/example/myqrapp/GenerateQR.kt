@@ -2,12 +2,15 @@ package com.example.myqrapp
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.widget.Button
-import android.widget.Toolbar
 import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.Fragment
 
 open class GenerateQR : AppCompatActivity() {
+
+    lateinit var receiver: AirplaneModeChangedReceiver
 
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,9 +28,25 @@ open class GenerateQR : AppCompatActivity() {
 
         val buttonFile: Button = findViewById(R.id.file_system)
         buttonFile.setOnClickListener {
-            val intent = Intent(this@GenerateQR, FilesSystem::class.java)
-            startActivity(intent)
+            replaceFragment(FilesSystem())
         }
 
+        receiver = AirplaneModeChangedReceiver()
+    }
+
+    private fun replaceFragment(fragment: Fragment) {
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragment_container, fragment)
+            .commitNow()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        registerReceiver(receiver, IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED))
+    }
+
+    override fun onStop() {
+        super.onStop()
+        unregisterReceiver(receiver)
     }
 }

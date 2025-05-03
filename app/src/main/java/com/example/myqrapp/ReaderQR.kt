@@ -3,6 +3,8 @@ package com.example.myqrapp
 import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.os.Bundle
+import android.os.SystemClock
+import android.os.Trace
 import android.util.Log
 import android.util.Size
 import android.widget.TextView
@@ -30,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.TimeSource
 
@@ -57,7 +60,14 @@ open class ReaderQR : AppCompatActivity() {
 
     private val firstFrame = AtomicInteger(0)
     private val nrPckToProcess = AtomicInteger(0)
+    //private val currentFrameId = AtomicInteger(0)
+
+    private val prevFrameId = AtomicInteger(0)
+
     var timeBeforeSeq = AtomicInteger(0)
+    var framesTime = AtomicInteger(0)
+
+    var ableToProc = AtomicBoolean(false)
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,13 +159,12 @@ open class ReaderQR : AppCompatActivity() {
                         if ((firstFrame.get() == 0)) {
                             processImageProxy(proxy)
 
-                            Log.d("ReaderQR.kt","chestia asta se opresete cand frist e 1")
+                            //Log.d("ReaderQR.kt","chestia asta se opresete cand frist e 1")
 
                         } else {
                             processImageProxySeq(proxy)
-                            Log.d("ReaderQR.kt","a procesat pachetul din seq " + nrPckToProcess.get())
+                            //Log.d("ReaderQR.kt","a procesat pachetul din seq " + nrPckToProcess.get())
                         }
-
                     }
                 }
 
@@ -171,6 +180,7 @@ open class ReaderQR : AppCompatActivity() {
         }
     }
 
+    /* Used for the FIRST FRAME */
     /* it is called for EACH frame scanned by the camera */
     @OptIn(ExperimentalGetImage::class)
     private fun processImageProxy(imageProxy: ImageProxy) {
@@ -189,34 +199,34 @@ open class ReaderQR : AppCompatActivity() {
                 .addOnSuccessListener { barcodes ->
                     if (isDestroyed) return@addOnSuccessListener
                     barcodes.firstOrNull()?.rawValue?.let { result ->
-                        runOnUiThread {
-                            resultTextView.text = "res: $result"
 
-                            if (firstFrame.get() == 0) {
-                                /* Store the time for the first frame */
-                                /* Scanning process should start after timeBeforeSeq + latestAnalyzedTimestamp is >= than
+                        if (firstFrame.compareAndSet(0,1)) {
+                            /* Store the time for the first frame */
+                            /* Scanning process should start after timeBeforeSeq + latestAnalyzedTimestamp is >= than
                                 * the time stamp of current analyzed photo */
+                            //firstFrame.set(1)
+                            val timeAux = extractTime(result)
+                            timeBeforeSeq.set(timeAux)
+                            nrPckToProcess.set(extractNrPck(result))
+                            framesTime.set(extractFramesTime(result))
 
-                                val timeAux = extractTime(result)
-                                timeBeforeSeq.set(timeAux)
-                                Log.d("ReaderQR.kt","am setat yimpul la??" + timeBeforeSeq.get() + "nr pck = " + nrPckToProcess.get())
-                                firstFrame.set(1)
-                                nrPckToProcess.set(extractNrPck(result))
+                             runOnUiThread {
+                                 resultTextView.text = "res: $result"
+                             }
 
-                                lifecycleScope.launch {
-                                    delay(timeBeforeSeq.get().toLong())
-                                    Log.d("ReaderQR.kt","aici trebuie inchisa poza altfel nu o sa mearga sincronizarea ?")
+                            Log.d("ReaderQR.kt", "[timp inceptu]= " + timeBeforeSeq.get() + " [nr pck]= " + nrPckToProcess.get() + " [trimp intre cadre]= " + framesTime.get())
 
-                                    //daca inchid poza aici dupa delay
-                                    //trece sa faca citire pt firs == read and nrpck>0
-                                    imageProxy.close()
-                                }
-                            }
+                            //delay(timeBeforeSeq.get().toLong())
+
+                            //daca inchid poza aici dupa delay
+                            //trece sa faca citire pt firs == read and nrpck>0
+                            //imageProxy.close()
                         }
                     }
                 }
                 .addOnFailureListener {
                     if (!isDestroyed) {
+                        //imageProxy.close()
                         resultTextView.text = "Wait to scan a qr code"
                     }
                 }
@@ -224,19 +234,23 @@ open class ReaderQR : AppCompatActivity() {
             //clean up memory and allow nxt frame to pe processed
             //after the task was completed the addOnCompleteListener is called
                 if(firstFrame.get() == 0) {
-                    imageProxy.close()
-                    Log.d("ReaderQR.kt","ce oridine e asta  ?")
+                    //imageProxy.close()
+                    //Log.d("[nu primul cadru]","ce oridine e asta  ?")
                 }
+
+                imageProxy.close()
             }
         } catch (e: Exception) {
-            imageProxy.close()
+            //imageProxy.close()
         }
     }
 
 
+    /* Used for the SEQ-FRAMES */
     /* it is called for EACH frame scanned by the camera */
     @OptIn(ExperimentalGetImage::class)
     private fun processImageProxySeq(imageProxy: ImageProxy) {
+
         try {
             val mediaImage = imageProxy.image ?: run {
                 imageProxy.close()
@@ -245,42 +259,51 @@ open class ReaderQR : AppCompatActivity() {
 
             //image is converted into an input image
             //rotationDegrees used for accurate scan - image is rotated correctly
+
+            val startPhotoMedia = SystemClock.elapsedRealtime()
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            val endPhotoMedia = SystemClock.elapsedRealtime()
+            Log.d("Timing", "Durata Photo Media: ${endPhotoMedia - startPhotoMedia} ms")
+
+
+            Trace.beginSection("BarcodeScanner processing")
 
             //process the image
             barcodeScanner.process(image)
                 .addOnSuccessListener { barcodes ->
+                    Trace.endSection()
+
                     if (isDestroyed) return@addOnSuccessListener
                     barcodes.firstOrNull()?.rawValue?.let { result ->
-                        runOnUiThread {
-                            resultTextView.text = "res: $result"
+                        //Log.d("[imediat dupa ce a citit un qr]=", result)
+                        if ((firstFrame.get() == 1) && (nrPckToProcess.get() > 0)) {
 
-                            if ((firstFrame.get() == 1) && (nrPckToProcess.get() > 0)) {
+                            //val start = System.currentTimeMillis()
 
-                                lifecycleScope.launch {
-                                    val pck = PackageData.deserializePck(result)
+                            val startDeserialize = SystemClock.elapsedRealtime()
+                            val pck = PackageData.deserializePck(
+                                result)
+                            val endDeserialize = SystemClock.elapsedRealtime()
+                            Log.d("Timing", "Durata deserializare: ${endDeserialize - startDeserialize} ms")
 
+                            //in caul in care citesc acelasi pachet - ii dau dorop
 
-                                    //if pck.id != anterior + 1
-                                    //   { //to do - opresc operatia NU MAI SCANEZ SI AFESEZ PE
-                                    //ECRAN  afiseaza => MESAJ ORIDINEA GRESITA
+                            if(pck.pckId == (prevFrameId.get())) {
+                                Log.d("ReaderQR.kt", "Pachet ${pck.pckId} recitit - ignore")
+                            }
+                            else if (pck.pckId == (prevFrameId.get() + 1)) {
+                                prevFrameId.set(pck.pckId)
 
+                                Log.d("---------", "procesare pachet" + result)
 
-                                    //if pck.crc != crc(pck.payload)
-                                    //ECRAN A APRAUT afiseaza
-                                    // => MESAJ PACHET CORUPT - CORRUPT DATA
+                                nrPckToProcess.getAndDecrement()
 
+                                runOnUiThread {
+                                    resultTextView.text = "res: $result"
+                                }
 
-
-                                    Log.d("ReaderQR.kt","procesare pachet" + result)
-                                    val mark = timeSource.markNow()
-                                    var nrPckToProcessAux = nrPckToProcess.get()
-                                    nrPckToProcessAux = nrPckToProcessAux - 1
-                                    nrPckToProcess.set(nrPckToProcessAux);
-
-                                    Log.d("ReaderQR.kt", "mai am vreun pachet de procesat?? " + nrPckToProcess)
-
-                                    //sterge linie
+                                 lifecycleScope.launch {
+                                     val startInsert = SystemClock.elapsedRealtime()
                                     databaseR.DAO_RECEIVED_PACKAGE.insertPck(
                                         ReceivedPackage(
                                             pck.pckId,
@@ -289,25 +312,39 @@ open class ReaderQR : AppCompatActivity() {
                                             pck.content
                                         )
                                     )
+                                     val endInsert = SystemClock.elapsedRealtime()
+                                     Log.d("Timing", "trebuie sa mut pe threadul cu insert: ${endInsert - startInsert} ms")
 
-                                    delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds)
+                                 }
 
 
-                                    //mai optim sa o fac inainte??
-                                    if (nrPckToProcess.get() == 0) {
-                                        /* go back to parent activity */
+                                if (nrPckToProcess.get() == 0) {
+                                    /* go back to parent activity */
+                                    Log.d(
+                                        "ReaderQR.kt",
+                                        "Toate pachetele procesate - închidem camera manual"
+                                    )
+                                    cameraProvider?.unbindAll()  // Oprim camera înainte de a distruge UI-ul
+                                    //delay(100)                   // Dăm timp camerei să se elibereze
+                                    finish()
+                                }
+                            } else {
+                                //primire pachet care nu se afla in secventa
+                                cameraProvider?.unbindAll()
+                                barcodeScanner.close()
 
-                                        Log.d("ReaderQR.kt", "Toate pachetele procesate - închidem camera manual")
-
-                                        cameraProvider?.unbindAll()  // Oprim camera înainte de a distruge UI-ul
-                                        delay(100)                   // Dăm timp camerei să se elibereze
-
-                                        finish()
-                                    } else {
-                                        imageProxy.close()
-                                    }
+                                runOnUiThread {
+                                    resultTextView.text = "Eroare: pachetul primit (${pck.pckId}) nu e în secvență! Te rog reia procesul de scanare ..."
+                                }
+                                lifecycleScope.launch {
+                                    delay(5000)
+                                    finish()
                                 }
                             }
+
+                            //val end = System.currentTimeMillis()
+                            //Log.d("Timing", "Taskul a durat ${end - start} ms")
+
                         }
                     }
                 }
@@ -320,13 +357,11 @@ open class ReaderQR : AppCompatActivity() {
                 .addOnCompleteListener {
                     //clean up memory and allow nxt frame to pe processed
                     //after the task was completed the addOnCompleteListener is called
-                    if(firstFrame.get() == 0) {
-                        imageProxy.close()
-                        Log.d("ReaderQR.kt","ce oridine e asta  ?")
-                    }
+                    imageProxy.close()
+
                 }
         } catch (e: Exception) {
-            imageProxy.close()
+            //imageProxy.close()
         }
     }
 
@@ -353,16 +388,6 @@ open class ReaderQR : AppCompatActivity() {
         barcodeScanner.close()*/
     }
 
-    private fun processFirstFrame(scannedText: String) {
-
-        val timeAux = extractTime(scannedText)
-        timeBeforeSeq.set(timeAux)
-        Log.d("ReaderQR.kt","am setat yimpul la??" + timeBeforeSeq.get())
-        firstFrame.set(1)
-        nrPckToProcess.set(extractNrPck(scannedText))
-        //firstFrame = 1//first pck received
-    }
-
     private fun extractTime(scannedText: String): Int {
 
         val pck = PackageData.deserializePck(scannedText)
@@ -370,13 +395,20 @@ open class ReaderQR : AppCompatActivity() {
         val indNrPck = pck.content.indexOf("NrPck:") // len = 6
         Log.d("ReaderQR.kt"," aici un pck " + pck.pckId.toString() + " " + pck.crc + " " + pck.length + " " + pck.content)
 
+        Log.d("cauta timp pana la incepere.. ", pck.content.substring(indTime, indNrPck).toInt().toString())
         return pck.content.substring(indTime, indNrPck).toInt()
     }
 
     private fun extractNrPck(scannedText: String): Int {
-
         val pck = PackageData.deserializePck(scannedText)
-        return pck.content.substringAfterLast("NrPck:").toInt()
+        val indNrPck = pck.content.indexOf("NrPck:") + 6
+        val indFramesTime = pck.content.indexOf("FramesTime:") // len = 6
+        return pck.content.substring(indNrPck, indFramesTime).toInt()
+    }
+
+    private fun extractFramesTime(scannedText: String): Int {
+        val pck = PackageData.deserializePck(scannedText)
+        return pck.content.substringAfterLast("FramesTime:").toInt()
     }
 
 

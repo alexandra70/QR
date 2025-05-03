@@ -168,11 +168,16 @@ class FilesSystem : Fragment() {
         stringBuilder.append("NrPck:")
         stringBuilder.append(nrPck.toString())
 
+        stringBuilder.append("FramesTime:")
+        stringBuilder.append(SenderReaderVars.packetDelayMs)
+
         //send data
         localQRGenerate(PackageData(
             0,
             0,
-            5 + time.toString().length + 6 + nrPck.toString().length,
+            5 + time.toString().length
+                    + 6 + nrPck.toString().length
+                    + 11 + SenderReaderVars.packetDelayMs.toString().length,
             stringBuilder.toString()
         ))
 

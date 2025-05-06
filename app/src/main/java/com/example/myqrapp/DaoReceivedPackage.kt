@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DaoReceivedPackage {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertPck(receivedPackage: ReceivedPackage) //ar trebui sa nu pot insera pacete cu acelasi id deci??
+    suspend fun insertPck(receivedPackage: ReceivedPackage)
 
     @Delete
     suspend fun deletePck(receivedPackage: ReceivedPackage)

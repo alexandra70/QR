@@ -45,8 +45,6 @@ open class ReaderQR : AppCompatActivity() {
     private lateinit var barcodeScanner: BarcodeScanner
     private var cameraProvider: ProcessCameraProvider? = null
 
-    //?
-    //sterge linie
     private lateinit var databaseR: PackageReceivedDB
     private lateinit var daoR: DaoReceivedPackage
 
@@ -68,7 +66,6 @@ open class ReaderQR : AppCompatActivity() {
     var framesTime = AtomicInteger(0)
 
     var ableToProc = AtomicBoolean(false)
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -159,8 +156,6 @@ open class ReaderQR : AppCompatActivity() {
                         if ((firstFrame.get() == 0)) {
                             processImageProxy(proxy)
 
-                            //Log.d("ReaderQR.kt","chestia asta se opresete cand frist e 1")
-
                         } else {
                             processImageProxySeq(proxy)
                             //Log.d("ReaderQR.kt","a procesat pachetul din seq " + nrPckToProcess.get())
@@ -176,7 +171,7 @@ open class ReaderQR : AppCompatActivity() {
                 cameraSelector, preview, imageAnalyzer)
 
         } catch (exc: Exception) {
-            Log.e("Camera", "err?? ", exc)
+            Log.e("Camera", " error ", exc)
         }
     }
 
@@ -215,12 +210,6 @@ open class ReaderQR : AppCompatActivity() {
                              }
 
                             Log.d("ReaderQR.kt", "[timp inceptu]= " + timeBeforeSeq.get() + " [nr pck]= " + nrPckToProcess.get() + " [trimp intre cadre]= " + framesTime.get())
-
-                            //delay(timeBeforeSeq.get().toLong())
-
-                            //daca inchid poza aici dupa delay
-                            //trece sa faca citire pt firs == read and nrpck>0
-                            //imageProxy.close()
                         }
                     }
                 }
@@ -245,7 +234,6 @@ open class ReaderQR : AppCompatActivity() {
         }
     }
 
-
     /* Used for the SEQ-FRAMES */
     /* it is called for EACH frame scanned by the camera */
     @OptIn(ExperimentalGetImage::class)
@@ -264,7 +252,6 @@ open class ReaderQR : AppCompatActivity() {
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
             val endPhotoMedia = SystemClock.elapsedRealtime()
             Log.d("Timing", "Durata Photo Media: ${endPhotoMedia - startPhotoMedia} ms")
-
 
             Trace.beginSection("BarcodeScanner processing")
 
@@ -324,9 +311,19 @@ open class ReaderQR : AppCompatActivity() {
                                         "ReaderQR.kt",
                                         "Toate pachetele procesate - închidem camera manual"
                                     )
-                                    cameraProvider?.unbindAll()  // Oprim camera înainte de a distruge UI-ul
-                                    //delay(100)                   // Dăm timp camerei să se elibereze
-                                    finish()
+
+
+                                    runOnUiThread {
+                                        resultTextView.text = "Succes"
+                                    }
+
+                                    lifecycleScope.launch {
+                                        delay(5000)
+
+                                        cameraProvider?.unbindAll()
+                                        finish()
+                                    }
+
                                 }
                             } else {
                                 //primire pachet care nu se afla in secventa
@@ -341,10 +338,6 @@ open class ReaderQR : AppCompatActivity() {
                                     finish()
                                 }
                             }
-
-                            //val end = System.currentTimeMillis()
-                            //Log.d("Timing", "Taskul a durat ${end - start} ms")
-
                         }
                     }
                 }
@@ -364,7 +357,6 @@ open class ReaderQR : AppCompatActivity() {
             //imageProxy.close()
         }
     }
-
 
     override fun onStop() {
         super.onStop()
@@ -394,8 +386,6 @@ open class ReaderQR : AppCompatActivity() {
         val indTime = pck.content.indexOf("Time:") + 5
         val indNrPck = pck.content.indexOf("NrPck:") // len = 6
         Log.d("ReaderQR.kt"," aici un pck " + pck.pckId.toString() + " " + pck.crc + " " + pck.length + " " + pck.content)
-
-        Log.d("cauta timp pana la incepere.. ", pck.content.substring(indTime, indNrPck).toInt().toString())
         return pck.content.substring(indTime, indNrPck).toInt()
     }
 
@@ -411,15 +401,11 @@ open class ReaderQR : AppCompatActivity() {
         return pck.content.substringAfterLast("FramesTime:").toInt()
     }
 
-
     @SuppressLint("SuspiciousIndentation")
     private suspend fun deleteAllDatabaseEntries() {
-
         withContext(Dispatchers.IO) {
             daoR.deleteAll()
         }
         Log.d(ContentValues.TAG, "All database entries deleted")
     }
-
-
 }

@@ -13,6 +13,7 @@ import android.graphics.Point
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.Display
 import android.view.LayoutInflater
@@ -35,8 +36,8 @@ import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.zip.CRC32
@@ -48,6 +49,7 @@ class FilesSystem : Fragment() {
     private lateinit var filePicker: ActivityResultLauncher<Intent>
     private var processData: Boolean = false
     private var nrPck = 0
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -60,30 +62,34 @@ class FilesSystem : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        filePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val selectedFileUri = result.data?.data
-                selectedFileUri?.let { uri ->
-                    Log.e(TAG, "a deschis fisierul asta $uri")
+        filePicker =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    val selectedFileUri = result.data?.data
+                    selectedFileUri?.let { uri ->
+                        Log.i(TAG, "a deschis fisierul asta $uri")
 
-                    //reset daca a fost ales cumva un alt fiseri intre timp
-                    stringBuilder.clear()
-                    nrPck = 0
+                        //reset value
+                        val textEncodeDataButtonPressed =
+                            view.findViewById<TextView>(R.id.filePrintableData)
+                        textEncodeDataButtonPressed.text = ""
 
-                    runBlocking {
+                        //reset daca a fost ales cumva un alt fiseri intre timp
+                        stringBuilder.clear()
+                        nrPck = 0
+
                         lifecycleScope.launch {
                             deleteAllDatabaseEntries(requireContext())
                             val success = readFileContent(requireContext(), uri)
                             if (success) {
-                                Log.d(TAG, "File read successfully")
+                                Log.i(TAG, "File read successfully")
                             } else {
-                                Log.e(TAG, "Failed to read file")
+                                Log.i(TAG, "Failed to read file")
                             }
                         }
                     }
                 }
             }
-        }
 
         val chooseFileButton: Button = view.findViewById(R.id.chooseFile)
         chooseFileButton.setOnClickListener {
@@ -96,54 +102,79 @@ class FilesSystem : Fragment() {
         buttonFile.setOnClickListener {
 
             if (processData) {
-                Log.e(TAG, "encodez")
-
                 Log.d(TAG, "caut string $stringBuilder")
-
                 //val textEncodeDataButtonPressed = view.findViewById<TextView>(R.id.filePrintableData)
-
                 lifecycleScope.launch {
                     fetchLocation()
                     //delay(1000)
                     //send first pck x times - each time will update the payload with the remaining time
-                    lifecycleScope.launch {
 
-                        val database = PackageDataDB.getDatabase(requireContext())
-                        val dao = database.dao
-                        requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(null)
+                    val database = PackageDataDB.getDatabase(requireContext())
+                    val dao = database.dao
 
-                        var timeStart = SenderReaderVars.initialSyncTimeMs // 7s? >> time
-                        //while (timeStart != 0) {
-                        while (timeStart > 0) {
-                            processFirstPck(timeStart)
-                            timeStart = timeStart - SenderReaderVars.firstPacketRepeatInterval
-                            delay(SenderReaderVars.firstPacketRepeatInterval)
-                        }
 
-                        dao.getPckDataBySEQnr().collect { packageDataList ->
-                            val iterator = packageDataList.iterator()
-                            val timeSource = TimeSource.Monotonic
+                    var timeStart = SenderReaderVars.initialSyncTimeMs // 7s? >> time
 
-                            while (iterator.hasNext()) {
-                                // time0 = time
-                                val mark = timeSource.markNow()
-                                val packageData = iterator.next()
-                                val content = packageData.content
-                                Log.d(TAG, "Processing content: $content")
-                                localQRGenerate(packageData)
-                                // delta = time - time0
-                                delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
-                            }
-                            requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(null)
+                    val startTimeTest = SystemClock.elapsedRealtime()
+                    Log.d(
+                        "cand incepe",
+                        (startTimeTest).toString()
+                    )
+                    //while (timeStart != 0) {
+                    while (timeStart > 0) {
+                        val startTime = SystemClock.elapsedRealtime()
+                        processFirstPck(timeStart)
+                        timeStart = timeStart - SenderReaderVars.firstPacketRepeatInterval
+
+                        val endTime = SystemClock.elapsedRealtime()
+                        val processTime = endTime - startTime
+
+                        //delay(SenderReaderVars.firstPacketRepeatInterval)
+                        Log.d(
+                            "uite",
+                            (SenderReaderVars.firstPacketRepeatInterval - processTime).toString()
+                        )
+                        val remainingDelay =
+                            SenderReaderVars.firstPacketRepeatInterval - processTime
+                        if (remainingDelay > 0) {
+                            delay(remainingDelay)
                         }
                     }
 
+                    val endTimeTest = SystemClock.elapsedRealtime()
+
+                    Log.d(
+                        "cand se terimna, dar diferenta",
+                        (endTimeTest - startTimeTest).toString()
+                    )
+
+                    //dao.getPckDataBySEQnr().collect { packageDataList ->
+                    val packageDataList = dao.getPckDataBySEQnr().first()
+
+                    val iterator = packageDataList.iterator()
+                    val timeSource = TimeSource.Monotonic
+
+                    while (iterator.hasNext()) {
+                        // time0 = time
+                        val mark = timeSource.markNow()
+                        val packageData = iterator.next()
+                        val content = packageData.content
+                        Log.d(TAG, "Processing content: $content")
+                        localQRGenerate(packageData)
+                        // delta = time - time0
+                        delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
+                        //}
+
+                    }
+
+                    requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(null)
                     //textEncodeDataButtonPressed.text = stringBuilder.toString()
                     processData = false
                 }
 
             } else {
-                val textEncodeDataButtonPressed = view.findViewById<TextView>(R.id.filePrintableData)
+                val textEncodeDataButtonPressed =
+                    view.findViewById<TextView>(R.id.filePrintableData)
                 textEncodeDataButtonPressed.text = "No file to encode"
             }
         }
@@ -281,7 +312,7 @@ class FilesSystem : Fragment() {
         val bitmap = generateQRCode(
             data,
             dimen,
-            errorCorrectionLevel = ErrorCorrectionLevel.L // M, L, Q
+            errorCorrectionLevel = ErrorCorrectionLevel.L
         ) //val qrEncoder = QRGEncoder(data, null, QRGContents.Type.TEXT, dimen)
         if (bitmap != null) {
             requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(bitmap)
@@ -298,14 +329,14 @@ class FilesSystem : Fragment() {
 
     private fun generateQRCode(
         data: String,
-        size: Int = 1024,
-        errorCorrectionLevel: ErrorCorrectionLevel = ErrorCorrectionLevel.M
+        size: Int,
+        errorCorrectionLevel: ErrorCorrectionLevel
     ): Bitmap? {
         return try {
             val hints = mapOf(
                 EncodeHintType.CHARACTER_SET to "UTF-8",
                 EncodeHintType.ERROR_CORRECTION to errorCorrectionLevel,
-                EncodeHintType.MARGIN to 1 // margine mică
+                EncodeHintType.MARGIN to 1 // o margine mai putin groasa in jurul codului
             )
 
             val bitMatrix: BitMatrix = MultiFormatWriter().encode(

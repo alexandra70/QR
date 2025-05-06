@@ -10,9 +10,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PackageDataDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertPck(packageData: PackageData) //ar trebui sa nu pot insera pacete cu acelasi id deci??
-
-    //sortare pachete? poate fac o eliminare inainte? are cum sa citeasca mai mult vreodata? face compilatorul asta asa ceva ???
+    suspend fun insertPck(packageData: PackageData)
     @Delete
     suspend fun deletePck(packageData: PackageData)
 

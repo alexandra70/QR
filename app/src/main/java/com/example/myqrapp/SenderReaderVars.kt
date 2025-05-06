@@ -2,17 +2,17 @@ package com.example.myqrapp
 
 object SenderReaderVars {
 
-    // timpul trimis în primul pachet (de obicei 10 secunde)
-    var initialSyncTimeMs: Long = 10_000
+    // timpul consumat pentru a transmite primul pachet
+    var initialSyncTimeMs: Long = 4000
 
-    // delay între pachetele trimise
-    var packetDelayMs: Long = 3_000
+    // delay intre pachete trimise(pentru primul cdru)
+    var firstPacketRepeatInterval: Long = 750
 
-    // delay de trimitere prim pachet (poți schimba de test)
-    var firstPacketRepeatInterval: Long = 1_000
+    // delay între pachetele trimise(pentru secventa de qr-uri)
+    var packetDelayMs: Long = 1000
 
     // payload lenght (cate caractere are in payload)
-    var payloadLength: Int = 983//124
+    var payloadLength: Int = 2900 //124, 983, 983*2 ok
 
     //cat la suta din ecran sa folosesc
     var qrSizeScaleFactor: Float = 1.00f // 3/4 75% din ecran

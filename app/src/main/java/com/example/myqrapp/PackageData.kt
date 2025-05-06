@@ -3,7 +3,6 @@ package com.example.myqrapp
 import android.util.Log
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import java.util.zip.CRC32
 
 @Entity
 data class PackageData(
@@ -55,7 +54,6 @@ data class PackageData(
                 val payloadLen = data.substring(indLen, indLenEnd).toInt()
 
                 if (indID == -1 || indCRC == -1 || indLen == -1 || indPayload == -1) {
-                    Log.d("[SAU LA ASTA ARE PROBL...]", "CAREMAI")
                     throw IllegalArgumentException("Pachet invalid - probleme la extragere campuri")
                 }
 
@@ -95,12 +93,6 @@ data class PackageData(
             stringBuilder.append(pck.content)
 
             return stringBuilder.toString()
-        }
-
-        private fun calculateCRC(data: ByteArray): Long {
-            val crc = CRC32()
-            crc.update(data)
-            return crc.value
         }
     }
 }

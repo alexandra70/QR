@@ -200,16 +200,26 @@ open class ReaderQR : AppCompatActivity() {
                             /* Scanning process should start after timeBeforeSeq + latestAnalyzedTimestamp is >= than
                                 * the time stamp of current analyzed photo */
                             //firstFrame.set(1)
-                            val timeAux = extractTime(result)
-                            timeBeforeSeq.set(timeAux)
-                            nrPckToProcess.set(extractNrPck(result))
-                            framesTime.set(extractFramesTime(result))
 
-                             runOnUiThread {
-                                 resultTextView.text = "res: $result"
-                             }
+                            if (checkFirstPck(result)) {
 
-                            Log.d("ReaderQR.kt", "[timp inceptu]= " + timeBeforeSeq.get() + " [nr pck]= " + nrPckToProcess.get() + " [trimp intre cadre]= " + framesTime.get())
+                                val timeAux = extractTime(result)
+                                timeBeforeSeq.set(timeAux)
+                                nrPckToProcess.set(extractNrPck(result))
+                                framesTime.set(extractFramesTime(result))
+
+                                runOnUiThread {
+                                    resultTextView.text = "res: $result"
+                                }
+
+                                Log.d(
+                                    "ReaderQR.kt",
+                                    "[timp inceptu]= " + timeBeforeSeq.get() + " [nr pck]= " + nrPckToProcess.get() + " [trimp intre cadre]= " + framesTime.get()
+                                )
+                            } else {
+                                //nu am inca primul pachet corect
+                                firstFrame.getAndSet(0)
+                            }
                         }
                     }
                 }
@@ -232,6 +242,45 @@ open class ReaderQR : AppCompatActivity() {
         } catch (e: Exception) {
             //imageProxy.close()
         }
+    }
+
+    private fun checkFirstPck(result: String): Boolean{
+        if (!result.contains("ID:")) {
+            Log.d("Deserializer", "Eroare: Lipseste campul ID")
+            return false
+        }
+
+        if (!result.contains("CRC:")) {
+            Log.d("Deserializer", "Eroare: Lipseste campul CRC")
+            return false
+        }
+
+        if (!result.contains("Length:")) {
+            Log.d("Deserializer", "Eroare: Lipseste campul Length")
+            return false
+        }
+
+        if (!result.contains("Payload:")) {
+            Log.d("Deserializer", "Eroare: Lipseste campul Payload")
+            return false
+        }
+
+        if (!result.contains("Time:")) {
+            Log.d("Deserializer", "Eroare: Lipseste campul Time")
+            return false
+        }
+
+        if (!result.contains("NrPck:")) {
+            Log.d("Deserializer", "Eroare: Lipseste campul NrPck")
+            return false
+        }
+
+        if (!result.contains("FramesTime:")) {
+            Log.d("Deserializer", "Eroare: Lipseste campul FramesTime")
+            return false
+        }
+
+        return true
     }
 
     /* Used for the SEQ-FRAMES */
@@ -327,12 +376,14 @@ open class ReaderQR : AppCompatActivity() {
                                 }
                             } else {
                                 //primire pachet care nu se afla in secventa
+
+                                runOnUiThread {
+                                    resultTextView.text = "Eroare: pachetul primit (${pck.pckId}) nu e in secvența! Te rog reia procesul de scanare ..."
+                                }
+
                                 cameraProvider?.unbindAll()
                                 barcodeScanner.close()
 
-                                runOnUiThread {
-                                    resultTextView.text = "Eroare: pachetul primit (${pck.pckId}) nu e în secvență! Te rog reia procesul de scanare ..."
-                                }
                                 lifecycleScope.launch {
                                     delay(5000)
                                     finish()

@@ -16,18 +16,15 @@ class ScanQR : AppCompatActivity(), ZXingScannerView.ResultHandler {
         setContentView(mScannerView)
         mScannerView.setResultHandler(this)
     }
-
     override fun onResume() {
         super.onResume()
         mScannerView.setResultHandler(this)
         mScannerView.startCamera()
     }
-
     override fun onPause() {
         super.onPause()
         mScannerView.stopCamera() // Stop camera on pause
     }
-
     override fun handleResult(rawResult: Result) {
         /* Trimite rezultatul înapoi la activitatea princip Am adăugat un Intent pentru a trimite textul scanat înapoi la activitatea principală:  setează rezultatul activității și îl trimite înapoi. */
         val resultIntent = Intent().apply {

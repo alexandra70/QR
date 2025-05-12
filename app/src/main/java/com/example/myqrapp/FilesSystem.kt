@@ -245,7 +245,7 @@ class FilesSystem : Fragment() {
     private suspend fun readFileContent(context: Context, uri: Uri?): Boolean {
         val database = PackageDataDB.getDatabase(context)
 
-        var chunkSize = SenderReaderVars.payloadLength //chr per pachet(bytes?)
+        var chunkSize = SenderReaderVars.payloadLength - SenderReaderVars.exceptPayload //chr per pachet(bytes?)
 
         println("aici fisier" + uri.toString())
 
@@ -266,7 +266,7 @@ class FilesSystem : Fragment() {
                             val chunk = buffer.copyOfRange(0, bytesRead)
                             val chunkString = String(chunk)
                             stringBuilder.append(chunkString)
-                            val crc = calculateCRC(chunk)
+                            val crc = computeCRC(chunk)
                             i++
                             withContext(Dispatchers.IO) {
                                 database.dao.insertPck(
@@ -315,13 +315,21 @@ class FilesSystem : Fragment() {
             errorCorrectionLevel = ErrorCorrectionLevel.L
         ) //val qrEncoder = QRGEncoder(data, null, QRGContents.Type.TEXT, dimen)
         if (bitmap != null) {
+
+            /*
+            Glide.with(requireContext())
+                .load(bitmap)
+                .into(requireView().findViewById<ImageView>(R.id.imageQR))
+
+             */
+
             requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(bitmap)
             return true
         }
         return false
     }
 
-    private fun calculateCRC(data: ByteArray): Long {
+    private fun computeCRC(data: ByteArray): Long {
         val crc = CRC32()
         crc.update(data)
         return crc.value
@@ -363,4 +371,6 @@ class FilesSystem : Fragment() {
             null
         }
     }
+
+
 }

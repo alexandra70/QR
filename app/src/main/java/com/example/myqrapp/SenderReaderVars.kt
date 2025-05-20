@@ -27,6 +27,8 @@ object SenderReaderVars {
 
     //din valoare de mai sus scad cat ar fi - trbeuie sa vad cate caractere ocupa restul de campuri
     //in afara de payload(mai mult e la ccr acolo), o sa fie aceasi valoare la file-read,
-
     var exceptPayloadForInsertedText: Int = 40
+
+    //
+    var PORT: Int = 9876
 }

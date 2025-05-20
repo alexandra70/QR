@@ -1,10 +1,11 @@
 package com.example.myqrapp
 
 import android.content.ContentValues
-import android.content.Intent
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Point
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -12,8 +13,6 @@ import android.view.Display
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
-import androidmads.library.qrgenearator.QRGEncoder
-import androidx.activity.result.ActivityResultLauncher
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.zxing.BarcodeFormat
@@ -22,31 +21,30 @@ import com.google.zxing.MultiFormatWriter
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.ServerSocket
 import java.util.zip.CRC32
 import kotlin.time.TimeSource
 
 open class GenerateQRText : AppCompatActivity() {
 
-    private val stringBuilder = StringBuilder()
-    private lateinit var filePicker: ActivityResultLauncher<Intent>
     private var nrPck = 0
-
 
     lateinit var qrIV: ImageView
     lateinit var msgEdt: EditText
     lateinit var generateQRBtn: Button
-    lateinit var bitmap: Bitmap
-    lateinit var qrEncoder: QRGEncoder
-    lateinit var receiver: AirplaneModeChangedReceiver
-
 
     lateinit var database: PackageDataDB
     lateinit var dao: PackageDataDao
 
+    private val ackChannel = Channel<Int>(Channel.UNLIMITED)
+    private var serverStarted = false
+    private var serverSocket: ServerSocket? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,24 +60,22 @@ open class GenerateQRText : AppCompatActivity() {
         database = PackageDataDB.getDatabase(applicationContext)
         dao = database.dao
 
+        startAckServer()
+
         generateQRBtn.setOnClickListener {
 
             if(!msgEdt.text.toString().isNullOrEmpty()) {
 
                 lifecycleScope.launch {
                     nrPck = 0
-
                     deleteAllDatabaseEntries()
-
                     //constructie pachete
-
                     val success = stringBreak(msgEdt.text.toString())
                     if (success) {
                         Log.i(ContentValues.TAG, "String correctly processed")
                     } else {
                         Log.i(ContentValues.TAG, "Failed to process String correctly")
                     }
-
 
                     //trimit primul pachet de cateva ori - >
                     var timeStart = SenderReaderVars.initialSyncTimeMs // 7s? >> time
@@ -89,26 +85,18 @@ open class GenerateQRText : AppCompatActivity() {
                         "cand incepe",
                         (startTimeTest).toString()
                     )
-                    //while (timeStart != 0) {
-                    while (timeStart > 0) {
-                        val startTime = SystemClock.elapsedRealtime()
-                        processFirstPck(timeStart)
-                        timeStart = timeStart - SenderReaderVars.firstPacketRepeatInterval
 
-                        val endTime = SystemClock.elapsedRealtime()
-                        val processTime = endTime - startTime
 
-                        //delay(SenderReaderVars.firstPacketRepeatInterval)
-                        Log.d(
-                            "uite",
-                            (SenderReaderVars.firstPacketRepeatInterval - processTime).toString()
-                        )
-                        val remainingDelay =
-                            SenderReaderVars.firstPacketRepeatInterval - processTime
-                        if (remainingDelay > 0) {
-                            delay(remainingDelay)
-                        }
+                    //               ACK PCK 0                 //
+                    processFirstPck(timeStart)
+                    val firstAck = ackChannel.receive()
+                    if (firstAck != 0) {
+                        Log.e("SYNC", "ACK invalid pentru primul pachet ($firstAck), opresc transmisia")
+                        return@launch
                     }
+                    Log.d("SYNC", "ACK primit pentru pachetul 0, începem transmisia cadrului principal")
+
+
 
                     val endTimeTest = SystemClock.elapsedRealtime()
 
@@ -117,9 +105,8 @@ open class GenerateQRText : AppCompatActivity() {
                         (endTimeTest - startTimeTest).toString()
                     )
 
-                    //dao.getPckDataBySEQnr().collect { packageDataList ->
+                    //       ACK SEQ                           //
                     val packageDataList = dao.getPckDataBySEQnr().first()
-
                     val iterator = packageDataList.iterator()
                     val timeSource = TimeSource.Monotonic
 
@@ -130,10 +117,13 @@ open class GenerateQRText : AppCompatActivity() {
                         val content = packageData.content
                         Log.d(ContentValues.TAG, "Processing content: $content")
                         localQRGenerate(packageData)
-                        // delta = time - time0
-                        delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
-                        //}
+                        // delta = time - time0 => delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
 
+                        val ackId = ackChannel.receive()
+                        if (ackId != packageData.pckId) {
+                            Log.e("SYNC", "Pachetul primit ($ackId) nu corespunde cu cel trimis (${packageData.pckId})")
+                            break
+                        }
                     }
                     qrIV.setImageBitmap(null)
                     //textEncodeDataButtonPressed.text = stringBuilder.toString()
@@ -142,12 +132,12 @@ open class GenerateQRText : AppCompatActivity() {
         }
     }
 
-
     private suspend fun stringBreak(textInserted: String): Boolean {
 
         var chunkSize =
             SenderReaderVars.payloadLengthForInsertedText - SenderReaderVars.exceptPayloadForInsertedText //chr per pachet(bytes?)
 
+        /* todo */
         chunkSize = 1
 
         if (textInserted.isEmpty()) return false
@@ -161,7 +151,7 @@ open class GenerateQRText : AppCompatActivity() {
 
         withContext(Dispatchers.IO) {
             for ((index, chunk) in chunks.withIndex()) {
-                val crc = computeCRC(chunk.toByteArray())
+                val crc = computeCRC(chunk)
 
                 database.dao.insertPck(
                     PackageData(
@@ -177,6 +167,41 @@ open class GenerateQRText : AppCompatActivity() {
         return true
     }
 
+    fun getLocalIpAddress(): String {
+        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val ip = wm.connectionInfo.ipAddress
+        //asta o sa mearga numai pt ipv4si numai in retele wifi
+        return String.format("%d.%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff)
+    }
+
+    private fun startAckServer() {
+        if (serverStarted) return
+        serverStarted = true
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                serverSocket = ServerSocket(SenderReaderVars.PORT)
+                while (true) {
+                    val client = serverSocket!!.accept()
+                    val reader = BufferedReader(InputStreamReader(client.getInputStream()))
+                    val ack = reader.readLine()
+                    Log.d("ACK_SERVER", "Primit: $ack")
+                    if (ack.startsWith("ACK:")) {
+                        val id = ack.removePrefix("ACK:").toIntOrNull()
+                        id?.let { ackChannel.send(it) }
+                    }
+                    client.close()
+                }
+            } catch (e: Exception) {
+                Log.e("ACK LA SENDER", "Eroare server", e)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serverSocket?.close()
+    }
     private fun processFirstPck(time: Long) {
 
         val stringBuilder = StringBuilder()
@@ -189,6 +214,9 @@ open class GenerateQRText : AppCompatActivity() {
         stringBuilder.append("FramesTime:")
         stringBuilder.append(SenderReaderVars.packetDelayMs)
 
+        val ip = getLocalIpAddress()
+        stringBuilder.append("IP:$ip")
+
         //send data
         localQRGenerate(
             PackageData(
@@ -196,7 +224,8 @@ open class GenerateQRText : AppCompatActivity() {
                 0,
                 5 + time.toString().length
                         + 6 + nrPck.toString().length
-                        + 11 + SenderReaderVars.packetDelayMs.toString().length,
+                        + 11 + SenderReaderVars.packetDelayMs.toString().length
+                        + 3 + ip.toString().length,
                 stringBuilder.toString()
             )
         )
@@ -231,9 +260,9 @@ open class GenerateQRText : AppCompatActivity() {
         return false
     }
 
-    private fun computeCRC(data: ByteArray): Long {
+    private fun computeCRC(text: String): Long {
         val crc = CRC32()
-        crc.update(data)
+        crc.update(text.toByteArray(Charsets.UTF_8))
         return crc.value
     }
 
@@ -280,6 +309,4 @@ open class GenerateQRText : AppCompatActivity() {
         }
         Log.d(ContentValues.TAG, "All database entries deleted")
     }
-
-
 }

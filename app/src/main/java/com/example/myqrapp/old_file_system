@@ -11,7 +11,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Point
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -36,14 +35,11 @@ import com.google.zxing.MultiFormatWriter
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
 import java.io.IOException
-import java.io.InputStreamReader
-import java.net.ServerSocket
 import java.util.zip.CRC32
 import kotlin.time.TimeSource
 
@@ -53,8 +49,6 @@ class FilesSystem : Fragment() {
     private lateinit var filePicker: ActivityResultLauncher<Intent>
     private var processData: Boolean = false
     private var nrPck = 0
-
-    private val ackChannel = Channel<Int>(Channel.UNLIMITED)
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -67,9 +61,6 @@ class FilesSystem : Fragment() {
     @SuppressLint("SetTextI18n")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        //trebuie neaparat apelat o singura data - poate daca fac un init sau aici
-        startAckServer()
 
         filePicker =
             registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -117,8 +108,11 @@ class FilesSystem : Fragment() {
                     fetchLocation()
                     //delay(1000)
                     //send first pck x times - each time will update the payload with the remaining time
+
                     val database = PackageDataDB.getDatabase(requireContext())
                     val dao = database.dao
+
+
                     var timeStart = SenderReaderVars.initialSyncTimeMs // 7s? >> time
 
                     val startTimeTest = SystemClock.elapsedRealtime()
@@ -126,25 +120,37 @@ class FilesSystem : Fragment() {
                         "cand incepe",
                         (startTimeTest).toString()
                     )
+                    //while (timeStart != 0) {
+                    while (timeStart > 0) {
+                        val startTime = SystemClock.elapsedRealtime()
+                        processFirstPck(timeStart)
+                        timeStart = timeStart - SenderReaderVars.firstPacketRepeatInterval
 
-                    //               ACK PCK 0                 //
-                    processFirstPck(timeStart)
-                    val firstAck = ackChannel.receive()
-                    if (firstAck != 0) {
-                        Log.e("SYNC", "ACK invalid pentru primul pachet ($firstAck), opresc transmisia")
-                        return@launch
+                        val endTime = SystemClock.elapsedRealtime()
+                        val processTime = endTime - startTime
+
+                        //delay(SenderReaderVars.firstPacketRepeatInterval)
+                        Log.d(
+                            "uite",
+                            (SenderReaderVars.firstPacketRepeatInterval - processTime).toString()
+                        )
+                        val remainingDelay =
+                            SenderReaderVars.firstPacketRepeatInterval - processTime
+                        if (remainingDelay > 0) {
+                            delay(remainingDelay)
+                        }
                     }
-                    Log.d("SYNC", "ACK primit pentru pachetul 0, începem transmisia cadrului principal")
 
                     val endTimeTest = SystemClock.elapsedRealtime()
+
                     Log.d(
                         "cand se terimna, dar diferenta",
                         (endTimeTest - startTimeTest).toString()
                     )
 
-                    //       ACK SEQ                           //
                     //dao.getPckDataBySEQnr().collect { packageDataList ->
                     val packageDataList = dao.getPckDataBySEQnr().first()
+
                     val iterator = packageDataList.iterator()
                     val timeSource = TimeSource.Monotonic
 
@@ -155,14 +161,10 @@ class FilesSystem : Fragment() {
                         val content = packageData.content
                         Log.d(TAG, "Processing content: $content")
                         localQRGenerate(packageData)
-                        // delta = time - time0  = > delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
+                        // delta = time - time0
+                        delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
+                        //}
 
-                        // wait ACK pentru pachetul primit
-                        val ackId = ackChannel.receive()
-                        if (ackId != packageData.pckId) {
-                            Log.e("SYNC", "Pachetul primit ($ackId) nu corespunde cu cel trimis (${packageData.pckId})")
-                            break
-                        }
                     }
 
                     requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(null)
@@ -178,27 +180,6 @@ class FilesSystem : Fragment() {
         }
     }
 
-    private fun startAckServer() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val serverSocket = ServerSocket(SenderReaderVars.PORT)
-                while (true) {
-                    val client = serverSocket.accept()
-                    val reader = BufferedReader(InputStreamReader(client.getInputStream()))
-                    val ack = reader.readLine()
-                    Log.d("ACK_SERVER", "Primit: $ack")
-                    if (ack.startsWith("ACK:")) {
-                        val id = ack.removePrefix("ACK:").toIntOrNull()
-                        id?.let { ackChannel.send(it) }
-                    }
-                    client.close()
-                }
-            } catch (e: Exception) {
-                Log.e("ACK LA SENDER", "Eroare server", e)
-            }
-        }
-    }
-
     @SuppressLint("SuspiciousIndentation")
     private suspend fun deleteAllDatabaseEntries(context: Context) {
         val database = PackageDataDB.getDatabase(context)
@@ -209,12 +190,7 @@ class FilesSystem : Fragment() {
             Log.d(TAG, "All database entries deleted")
     }
 
-    fun getLocalIpAddress(): String {
-        val wm = requireContext().getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val ip = wm.connectionInfo.ipAddress
-        return String.format("%d.%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff)
-    }
-    private fun processFirstPck(time: Long) {
+    private suspend fun processFirstPck(time: Long) {
 
         val stringBuilder = StringBuilder()
         stringBuilder.append("Time:")
@@ -226,21 +202,17 @@ class FilesSystem : Fragment() {
         stringBuilder.append("FramesTime:")
         stringBuilder.append(SenderReaderVars.packetDelayMs)
 
-        val ip = getLocalIpAddress()
-        stringBuilder.append("IP:$ip")
-
         //send data
         localQRGenerate(PackageData(
             0,
             0,
             5 + time.toString().length
                     + 6 + nrPck.toString().length
-                    + 11 + SenderReaderVars.packetDelayMs.toString().length
-                    + 3 + ip.toString().length,
+                    + 11 + SenderReaderVars.packetDelayMs.toString().length,
             stringBuilder.toString()
         ))
 
-        Log.d("?","timpul de procesaer si cum arata payload : " + stringBuilder.toString() + " " +time + "cate pachete " + nrPck)
+        println("timpul de procesaer si cum arata payload : " + stringBuilder.toString() + " " +time + "cate pachete " + nrPck)
     }
 
     /* Loop to send first pck */
@@ -273,8 +245,9 @@ class FilesSystem : Fragment() {
     private suspend fun readFileContent(context: Context, uri: Uri?): Boolean {
         val database = PackageDataDB.getDatabase(context)
 
-        var chunkSize =
-            SenderReaderVars.payloadLength - SenderReaderVars.exceptPayload //chr per pachet(bytes?)
+        var chunkSize = SenderReaderVars.payloadLength - SenderReaderVars.exceptPayload //chr per pachet(bytes?)
+
+        println("aici fisier" + uri.toString())
 
         if (uri != null) {
             return try {
@@ -283,29 +256,32 @@ class FilesSystem : Fragment() {
                 var bytesRead: Int
                 val buffer = ByteArray(chunkSize)
                 var i = 0
-                inputStream?.use { stream ->
-                    while (withContext(Dispatchers.IO) {
-                            stream.read(buffer).also { bytesRead = it }
-                        } != -1) {
-                        val chunk = buffer.copyOfRange(0, bytesRead)
-                        val chunkString = String(chunk)
-                        stringBuilder.append(chunkString)
-                        val crc = computeCRC(chunkString)
-                        i++
-                        withContext(Dispatchers.IO) {
-                            database.dao.insertPck(
-                                PackageData(
-                                    i,
-                                    crc,
-                                    chunkString.length,
-                                    chunkString
+
+                println("deci nu e null - ar trebui sa intre sa proceseze content din file")
+
+                    inputStream?.use { stream ->
+                        while (withContext(Dispatchers.IO) {
+                                stream.read(buffer).also { bytesRead = it }
+                            } != -1) {
+                            val chunk = buffer.copyOfRange(0, bytesRead)
+                            val chunkString = String(chunk)
+                            stringBuilder.append(chunkString)
+                            val crc = computeCRC(chunk)
+                            i++
+                            withContext(Dispatchers.IO) {
+                                database.dao.insertPck(
+                                    PackageData(
+                                        i,
+                                        crc,
+                                        chunkString.length,
+                                        chunkString
+                                    )
                                 )
-                            )
+                            }
+                            println(i.toString() + " " + chunkString + " " + "caut ce adaug in db   ")
+                            nrPck++;
                         }
-                        println(i.toString() + " " + chunkString + " " + "caut ce adaug in db   ")
-                        nrPck++;
                     }
-                }
                 Log.d(TAG, "Conținutul fișierului: $stringBuilder")
                 true
             } catch (e: IOException) {
@@ -317,7 +293,7 @@ class FilesSystem : Fragment() {
         }
     }
 
-    fun localQRGenerate(packageData: PackageData): Boolean {
+    suspend fun localQRGenerate(packageData: PackageData): Boolean {
 
         val windowManager = requireContext().getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val display: Display = windowManager.defaultDisplay
@@ -333,21 +309,27 @@ class FilesSystem : Fragment() {
         //pregatire date de codificat
         val data = PackageData.serializePck(packageData)
 
-        val bitmap = generateQRCode(
-            data,
-            dimen,
-            errorCorrectionLevel = ErrorCorrectionLevel.L
-        ) //val qrEncoder = QRGEncoder(data, null, QRGContents.Type.TEXT, dimen)
-        if (bitmap != null) {
 
-            requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(bitmap)
+        val bitmap = withContext(Dispatchers.Default) {
+            generateQRCode(
+                data,
+                dimen,
+                errorCorrectionLevel = ErrorCorrectionLevel.L
+            )
+        }
+
+        if (bitmap != null) {
+            withContext(Dispatchers.Main) {
+                requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(bitmap)
+            }
             return true
         }
         return false
     }
-    private fun computeCRC(text: String): Long {
+
+    private fun computeCRC(data: ByteArray): Long {
         val crc = CRC32()
-        crc.update(text.toByteArray(Charsets.UTF_8))
+        crc.update(data)
         return crc.value
     }
 
@@ -373,13 +355,15 @@ class FilesSystem : Fragment() {
 
             val width = bitMatrix.width
             val height = bitMatrix.height
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-
-            for (x in 0 until width) {
-                for (y in 0 until height) {
-                    bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.BLACK else Color.WHITE)
+            val pixels = IntArray(width * height)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    val index = y * width + x
+                    pixels[index] = if (bitMatrix[x, y]) Color.BLACK else Color.WHITE
                 }
             }
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
 
             bitmap
         } catch (e: Exception) {

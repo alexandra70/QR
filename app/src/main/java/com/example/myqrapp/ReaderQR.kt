@@ -30,6 +30,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.PrintWriter
+import java.net.Socket
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -66,6 +68,9 @@ open class ReaderQR : AppCompatActivity() {
     var framesTime = AtomicInteger(0)
 
     var ableToProc = AtomicBoolean(false)
+
+    //todo
+    lateinit var ip: String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -208,14 +213,23 @@ open class ReaderQR : AppCompatActivity() {
                                 nrPckToProcess.set(extractNrPck(result))
                                 framesTime.set(extractFramesTime(result))
 
+                                //?string atomic?
+                                ip = extractIp(result)
+
                                 runOnUiThread {
                                     resultTextView.text = "res: $result"
                                 }
 
                                 Log.d(
                                     "ReaderQR.kt",
-                                    "[timp inceptu]= " + timeBeforeSeq.get() + " [nr pck]= " + nrPckToProcess.get() + " [trimp intre cadre]= " + framesTime.get()
+                                    "[timp inceptu]= " + timeBeforeSeq.get()
+                                            + " [nr pck]= " + nrPckToProcess.get()
+                                            + " [trimp intre cadre]= " + framesTime.get()
+                                            + "ip = " + ip
                                 )
+
+                                sendAckToSender(ip, SenderReaderVars.PORT, 0)
+
                             } else {
                                 //nu am inca primul pachet corect
                                 firstFrame.getAndSet(0)
@@ -314,8 +328,6 @@ open class ReaderQR : AppCompatActivity() {
                         //Log.d("[imediat dupa ce a citit un qr]=", result)
                         if ((firstFrame.get() == 1) && (nrPckToProcess.get() > 0)) {
 
-                            //val start = System.currentTimeMillis()
-
                             val startDeserialize = SystemClock.elapsedRealtime()
                             val pck = PackageData.deserializePck(
                                 result)
@@ -348,11 +360,14 @@ open class ReaderQR : AppCompatActivity() {
                                             pck.content
                                         )
                                     )
+
+                                     //trimit ack si dupa verific cat timp a trecut
+                                     sendAckToSender(ip, SenderReaderVars.PORT, pck.pckId)
+
                                      val endInsert = SystemClock.elapsedRealtime()
                                      Log.d("Timing", "trebuie sa mut pe threadul cu insert: ${endInsert - startInsert} ms")
 
                                  }
-
 
                                 if (nrPckToProcess.get() == 0) {
                                     /* go back to parent activity */
@@ -360,7 +375,6 @@ open class ReaderQR : AppCompatActivity() {
                                         "ReaderQR.kt",
                                         "Toate pachetele procesate - închidem camera manual"
                                     )
-
 
                                     runOnUiThread {
                                         resultTextView.text = "Succes"
@@ -409,6 +423,19 @@ open class ReaderQR : AppCompatActivity() {
         }
     }
 
+    private fun sendAckToSender(ip: String, port: Int, pckId: Int) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val socket = Socket(ip, port)
+                val out = PrintWriter(socket.getOutputStream(), true)
+                out.println("ACK:$pckId")
+                socket.close()
+            } catch (e: Exception) {
+                Log.e("ACK READER QR", "nu merge ack in reader....", e)
+            }
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         try {
@@ -449,7 +476,13 @@ open class ReaderQR : AppCompatActivity() {
 
     private fun extractFramesTime(scannedText: String): Int {
         val pck = PackageData.deserializePck(scannedText)
-        return pck.content.substringAfterLast("FramesTime:").toInt()
+        val indFramesTime = pck.content.indexOf("FramesTime:") + 11
+        val indIP = pck.content.indexOf("IP:")
+        return pck.content.substring(indFramesTime, indIP).toInt()
+    }
+    private fun extractIp(scannedText: String): String {
+        val pck = PackageData.deserializePck(scannedText)
+        return pck.content.substringAfterLast("IP:").toString()
     }
 
     @SuppressLint("SuspiciousIndentation")

@@ -15,7 +15,7 @@ object SenderReaderVars {
     var exceptPayload: Int = 40
 
     // payload lenght (cate caractere are in payload)
-    var payloadLength: Int = 2900 //124, 983, 983*2 ok
+    var payloadLength: Int = 2200//2900 //124, 983, 983*2 ok
 
     //cat la suta din ecran sa folosesc
     var qrSizeScaleFactor: Float = 1.00f // 3/4 75% din ecran

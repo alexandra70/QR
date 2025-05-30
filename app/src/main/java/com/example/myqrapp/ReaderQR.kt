@@ -3,8 +3,10 @@ package com.example.myqrapp
 import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.os.Bundle
+import android.os.Environment
 import android.os.SystemClock
 import android.os.Trace
+import android.util.Base64
 import android.util.Log
 import android.util.Size
 import android.widget.TextView
@@ -28,8 +30,12 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.io.PrintWriter
 import java.net.Socket
 import java.util.concurrent.ExecutorService
@@ -49,6 +55,8 @@ open class ReaderQR : AppCompatActivity() {
 
     private lateinit var databaseR: PackageReceivedDB
     private lateinit var daoR: DaoReceivedPackage
+
+    val baos = ByteArrayOutputStream()
 
     var latestAnalyzedTimestamp = 0L;
     /*
@@ -228,6 +236,8 @@ open class ReaderQR : AppCompatActivity() {
                                             + "ip = " + ip
                                 )
 
+                                //baos.write(decoded)
+
                                 sendAckToSender(ip, SenderReaderVars.PORT, 0)
 
                             } else {
@@ -256,6 +266,52 @@ open class ReaderQR : AppCompatActivity() {
         } catch (e: Exception) {
             //imageProxy.close()
         }
+    }
+
+
+   /* private suspend fun writeToFileCompat() {
+        val file = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "compus.bin")
+
+        withContext(Dispatchers.IO) {
+            FileOutputStream(file).use { outputStream ->
+                val pachete = daoR.getPckDataBySEQnr().first()
+                for (pachet in pachete.sortedBy { it.pckId }) {
+                    val bytes = pachet.content.toByteArray(Charsets.ISO_8859_1)
+                    outputStream.write(bytes)
+                }
+            }
+        }
+
+        Log.d("RECONSTRUCT", "Fișier salvat la: ${file.absolutePath}")
+    } */
+
+    private suspend fun writeToFile() {
+        val downloadsDir =
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val file = File(downloadsDir, "compus")
+
+        val outputStream = withContext(Dispatchers.IO) {
+            FileOutputStream(file)
+        }
+
+
+        val pck = daoR.getPckDataBySEQnr().first()
+
+        val iterator = pck.iterator()
+        while (iterator.hasNext()) {
+            val packageData = iterator.next()
+            //val content = packageData.content
+            //val bytes = packageData.content.toByteArray(Charsets.ISO_8859_1)
+            val bytes = Base64.decode(packageData.content, Base64.NO_WRAP)
+            withContext(Dispatchers.IO) {
+                outputStream.write(bytes)
+            }
+
+        }
+        withContext(Dispatchers.IO) {
+            outputStream.close()
+        }
+        Log.d("RECONSTRUCT", "Fișier salvat la: ${file.absolutePath}")
     }
 
     private fun checkFirstPck(result: String): Boolean{
@@ -366,7 +422,6 @@ open class ReaderQR : AppCompatActivity() {
 
                                      val endInsert = SystemClock.elapsedRealtime()
                                      Log.d("Timing", "trebuie sa mut pe threadul cu insert: ${endInsert - startInsert} ms")
-
                                  }
 
                                 if (nrPckToProcess.get() == 0) {
@@ -380,7 +435,13 @@ open class ReaderQR : AppCompatActivity() {
                                         resultTextView.text = "Succes"
                                     }
 
+
+                                    //scriu fisier
+
                                     lifecycleScope.launch {
+
+                                        writeToFile()
+
                                         delay(5000)
 
                                         cameraProvider?.unbindAll()

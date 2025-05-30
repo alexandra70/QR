@@ -273,7 +273,7 @@ open class GenerateQRText : AppCompatActivity() {
     ): Bitmap? {
         return try {
             val hints = mapOf(
-                EncodeHintType.CHARACTER_SET to "UTF-8",
+                EncodeHintType.CHARACTER_SET to "UTF_8",
                 EncodeHintType.ERROR_CORRECTION to errorCorrectionLevel,
                 EncodeHintType.MARGIN to 1 // o margine mai putin groasa in jurul codului
             )

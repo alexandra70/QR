@@ -15,6 +15,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Base64
 import android.util.Log
 import android.view.Display
 import android.view.LayoutInflater
@@ -288,8 +289,17 @@ class FilesSystem : Fragment() {
                             stream.read(buffer).also { bytesRead = it }
                         } != -1) {
                         val chunk = buffer.copyOfRange(0, bytesRead)
-                        val chunkString = String(chunk)
-                        stringBuilder.append(chunkString)
+
+                        //val chunkString = String(chunk, Charset.forName("ISO-8859-1"))
+                        val chunkString = Base64.encodeToString(chunk, Base64.NO_WRAP)
+
+                        Log.d("chunk", chunk.joinToString(separator = "") { eachByte -> "%02x".format(eachByte) })
+
+                        Log.d("chunkString",  chunkString)
+
+                       // Base64.encodeToString(chunk, 0)
+                        //stringBuilder.append(chunkString)
+                        //sa vad daca e mai bine asa ? val payload = String(chunk, Charsets.ISO_8859_1)
                         val crc = computeCRC(chunkString)
                         i++
                         withContext(Dispatchers.IO) {
@@ -302,11 +312,14 @@ class FilesSystem : Fragment() {
                                 )
                             )
                         }
-                        println(i.toString() + " " + chunkString + " " + "caut ce adaug in db   ")
+
+                        Log.d("important = lungime string dupa iso...", chunkString.length.toString())
+                        //Log.d("important", chunkString.length.toString())
+                        Log.d("gen 1/2 pck", i.toString() + " " + chunkString + " " + "caut ce adaug in db   ")
                         nrPck++;
                     }
                 }
-                Log.d(TAG, "Conținutul fișierului: $stringBuilder")
+                //Log.d(TAG, "Conținutul fișierului: $stringBuilder")
                 true
             } catch (e: IOException) {
                 Log.e(TAG, "Eroare la citirea fișierului", e)
@@ -358,6 +371,7 @@ class FilesSystem : Fragment() {
     ): Bitmap? {
         return try {
             val hints = mapOf(
+                //EncodeHintType.CHARACTER_SET to "ISO-8859-1",
                 EncodeHintType.CHARACTER_SET to "UTF-8",
                 EncodeHintType.ERROR_CORRECTION to errorCorrectionLevel,
                 EncodeHintType.MARGIN to 1 // o margine mai putin groasa in jurul codului

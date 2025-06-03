@@ -183,16 +183,18 @@ class FilesSystem : Fragment() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val serverSocket = ServerSocket(SenderReaderVars.PORT)
+                val client = serverSocket.accept()
                 while (true) {
-                    val client = serverSocket.accept()
                     val reader = BufferedReader(InputStreamReader(client.getInputStream()))
                     val ack = reader.readLine()
                     Log.d("ACK_SERVER", "Primit: $ack")
                     if (ack.startsWith("ACK:")) {
                         val id = ack.removePrefix("ACK:").toIntOrNull()
                         id?.let { ackChannel.send(it) }
+                        if (id == -1){
+                            client.close()
+                        }
                     }
-                    client.close()
                 }
             } catch (e: Exception) {
                 Log.e("ACK LA SENDER", "Eroare server", e)

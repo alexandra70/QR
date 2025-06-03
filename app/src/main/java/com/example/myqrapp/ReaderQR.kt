@@ -55,6 +55,8 @@ open class ReaderQR : AppCompatActivity() {
 
     private lateinit var databaseR: PackageReceivedDB
     private lateinit var daoR: DaoReceivedPackage
+    private lateinit var connectionSocket: Socket
+    private lateinit var outPrintWriter: PrintWriter
 
     val baos = ByteArrayOutputStream()
 
@@ -236,10 +238,20 @@ open class ReaderQR : AppCompatActivity() {
                                             + "ip = " + ip
                                 )
 
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    try {
+                                        Log.d("Before CONNECTED", "inaininte")
+                                        connectionSocket = Socket(ip, SenderReaderVars.PORT)
+                                        Log.d("CONNECTED", "S-a conectat")
+                                        sendAckToSender(connectionSocket, 0)
+
+                                        outPrintWriter = PrintWriter(connectionSocket.getOutputStream(), true)
+
+                                    } catch (e: Exception) {
+                                        Log.e("RETEA", "Eroare la conectare socket", e)
+                                    }
+                                }
                                 //baos.write(decoded)
-
-                                sendAckToSender(ip, SenderReaderVars.PORT, 0)
-
                             } else {
                                 //nu am inca primul pachet corect
                                 firstFrame.getAndSet(0)
@@ -370,9 +382,9 @@ open class ReaderQR : AppCompatActivity() {
             val startPhotoMedia = SystemClock.elapsedRealtime()
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
             val endPhotoMedia = SystemClock.elapsedRealtime()
-            Log.d("Timing", "Durata Photo Media: ${endPhotoMedia - startPhotoMedia} ms")
+            //Log.d("Timing", "Durata Photo Media: ${endPhotoMedia - startPhotoMedia} ms")
 
-            Trace.beginSection("BarcodeScanner processing")
+            //Trace.beginSection("BarcodeScanner processing")
 
             //process the image
             barcodeScanner.process(image)
@@ -388,7 +400,7 @@ open class ReaderQR : AppCompatActivity() {
                             val pck = PackageData.deserializePck(
                                 result)
                             val endDeserialize = SystemClock.elapsedRealtime()
-                            Log.d("Timing", "Durata deserializare: ${endDeserialize - startDeserialize} ms")
+                            //Log.d("Timing", "Durata deserializare: ${endDeserialize - startDeserialize} ms")
 
                             //in caul in care citesc acelasi pachet - ii dau dorop
 
@@ -418,10 +430,10 @@ open class ReaderQR : AppCompatActivity() {
                                     )
 
                                      //trimit ack si dupa verific cat timp a trecut
-                                     sendAckToSender(ip, SenderReaderVars.PORT, pck.pckId)
+                                     sendAckToSender(connectionSocket, pck.pckId)
 
                                      val endInsert = SystemClock.elapsedRealtime()
-                                     Log.d("Timing", "trebuie sa mut pe threadul cu insert: ${endInsert - startInsert} ms")
+                                     //Log.d("Timing", "trebuie sa mut pe threadul cu insert: ${endInsert - startInsert} ms")
                                  }
 
                                 if (nrPckToProcess.get() == 0) {
@@ -435,6 +447,7 @@ open class ReaderQR : AppCompatActivity() {
                                         resultTextView.text = "Succes"
                                     }
 
+                                    connectionSocket.close()
 
                                     //scriu fisier
 
@@ -484,13 +497,12 @@ open class ReaderQR : AppCompatActivity() {
         }
     }
 
-    private fun sendAckToSender(ip: String, port: Int, pckId: Int) {
+    private fun sendAckToSender(socket: Socket, pckId: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val socket = Socket(ip, port)
-                val out = PrintWriter(socket.getOutputStream(), true)
-                out.println("ACK:$pckId")
-                socket.close()
+                Log.d("sendAckToSender", "inainte sa trimit ack reader")
+                outPrintWriter.println("ACK:$pckId")
+                Log.d("sendAckToSender", "dupa ce am trimis ack reader")
             } catch (e: Exception) {
                 Log.e("ACK READER QR", "nu merge ack in reader....", e)
             }

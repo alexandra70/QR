@@ -30,5 +30,5 @@ object SenderReaderVars {
     var exceptPayloadForInsertedText: Int = 40
 
     //
-    var PORT: Int = 9876
+    var PORT: Int = 9877
 }

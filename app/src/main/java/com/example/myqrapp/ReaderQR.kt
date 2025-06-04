@@ -57,6 +57,7 @@ open class ReaderQR : AppCompatActivity() {
     private lateinit var daoR: DaoReceivedPackage
     private lateinit var connectionSocket: Socket
     private lateinit var outPrintWriter: PrintWriter
+    private var readFailureCounter: Int = 0
 
     val baos = ByteArrayOutputStream()
 
@@ -372,6 +373,11 @@ open class ReaderQR : AppCompatActivity() {
 
         try {
             val mediaImage = imageProxy.image ?: run {
+                readFailureCounter += 1
+                if (readFailureCounter >= 15){
+                    sendAckToSender(connectionSocket, -2)
+                    readFailureCounter = 0
+                }
                 imageProxy.close()
                 return
             }
@@ -391,90 +397,93 @@ open class ReaderQR : AppCompatActivity() {
                 .addOnSuccessListener { barcodes ->
                     Trace.endSection()
 
+                    if (barcodes.isEmpty()) {
+                        Log.d(
+                            "ReaderQR.kt",
+                            "Poza neclara"
+                        )
+                        readFailureCounter += 1
+                        if (readFailureCounter >= 15) {
+                            sendAckToSender(connectionSocket, -2)
+                            readFailureCounter = 0
+                        }
+                    }
+
                     if (isDestroyed) return@addOnSuccessListener
                     barcodes.firstOrNull()?.rawValue?.let { result ->
                         //Log.d("[imediat dupa ce a citit un qr]=", result)
-                        if ((firstFrame.get() == 1) && (nrPckToProcess.get() > 0)) {
+                        if (firstFrame.get() == 1) {
+                            // if strcmp (PackadeData, "END") != 0
+                            readFailureCounter = 0
+                            if (result == "END") {
+                                sendAckToSender(connectionSocket, -1)
 
-                            val startDeserialize = SystemClock.elapsedRealtime()
-                            val pck = PackageData.deserializePck(
-                                result)
-                            val endDeserialize = SystemClock.elapsedRealtime()
-                            //Log.d("Timing", "Durata deserializare: ${endDeserialize - startDeserialize} ms")
-
-                            //in caul in care citesc acelasi pachet - ii dau dorop
-
-                            if(pck.pckId == (prevFrameId.get())) {
-                                Log.d("ReaderQR.kt", "Pachet ${pck.pckId} recitit - ignore")
-                            }
-                            else if (pck.pckId == (prevFrameId.get() + 1)) {
-                                prevFrameId.set(pck.pckId)
-
-                                Log.d("---------", "procesare pachet" + result)
-
-                                nrPckToProcess.getAndDecrement()
+                                //daca am primit ultimul cadru
+                                /* go back to parent activity */
+                                Log.d(
+                                    "ReaderQR.kt",
+                                    "Toate pachetele procesate - închidem camera manual"
+                                )
 
                                 runOnUiThread {
-                                    resultTextView.text = "res: $result"
+                                    resultTextView.text = "Succes"
                                 }
 
-                                 lifecycleScope.launch {
-                                     val startInsert = SystemClock.elapsedRealtime()
-                                    databaseR.DAO_RECEIVED_PACKAGE.insertPck(
-                                        ReceivedPackage(
-                                            pck.pckId,
-                                            pck.crc,
-                                            pck.length,
-                                            pck.content
-                                        )
-                                    )
+                                connectionSocket.close()
 
-                                     //trimit ack si dupa verific cat timp a trecut
-                                     sendAckToSender(connectionSocket, pck.pckId)
-
-                                     val endInsert = SystemClock.elapsedRealtime()
-                                     //Log.d("Timing", "trebuie sa mut pe threadul cu insert: ${endInsert - startInsert} ms")
-                                 }
-
-                                if (nrPckToProcess.get() == 0) {
-                                    /* go back to parent activity */
-                                    Log.d(
-                                        "ReaderQR.kt",
-                                        "Toate pachetele procesate - închidem camera manual"
-                                    )
-
-                                    runOnUiThread {
-                                        resultTextView.text = "Succes"
-                                    }
-
-                                    connectionSocket.close()
-
-                                    //scriu fisier
-
-                                    lifecycleScope.launch {
-
-                                        writeToFile()
-
-                                        delay(5000)
-
-                                        cameraProvider?.unbindAll()
-                                        finish()
-                                    }
-
+                                //scriu fisier
+                                lifecycleScope.launch {
+                                    writeToFile()
+                                    delay(5000)
+                                    cameraProvider?.unbindAll()
+                                    finish()
                                 }
                             } else {
-                                //primire pachet care nu se afla in secventa
 
-                                runOnUiThread {
-                                    resultTextView.text = "Eroare: pachetul primit (${pck.pckId}) nu e in secvența! Te rog reia procesul de scanare ..."
-                                }
+                                val pck = PackageData.deserializePck(
+                                    result
+                                )
+                                // else
+                                // inchizi sandramaua, socket, exit rutina asta etc etc
 
-                                cameraProvider?.unbindAll()
-                                barcodeScanner.close()
+                                if (pck.pckId == (prevFrameId.get())) {
+                                    Log.d("ReaderQR.kt", "Pachet ${pck.pckId} recitit - ignore")
+                                } else if (pck.pckId == (prevFrameId.get() + 1)) {
+                                    prevFrameId.set(pck.pckId)
 
-                                lifecycleScope.launch {
-                                    delay(5000)
-                                    finish()
+                                    runOnUiThread {
+                                        resultTextView.text = "res: $result"
+                                    }
+
+                                    lifecycleScope.launch {
+                                        val startInsert = SystemClock.elapsedRealtime()
+                                        databaseR.DAO_RECEIVED_PACKAGE.insertPck(
+                                            ReceivedPackage(
+                                                pck.pckId,
+                                                pck.crc,
+                                                pck.length,
+                                                pck.content
+                                            )
+                                        )
+                                        //trimit ack si dupa verific cat timp a trecut
+                                        sendAckToSender(connectionSocket, pck.pckId)
+                                    }
+
+                                } else {
+                                    //primire pachet care nu se afla in secventa
+
+                                    runOnUiThread {
+                                        resultTextView.text =
+                                            "Eroare: pachetul primit (${pck.pckId}) nu e in secvența! Te rog reia procesul de scanare ..."
+                                    }
+
+                                    cameraProvider?.unbindAll()
+                                    barcodeScanner.close()
+
+                                    lifecycleScope.launch {
+                                        delay(5000)
+                                        finish()
+                                    }
                                 }
                             }
                         }
@@ -483,6 +492,11 @@ open class ReaderQR : AppCompatActivity() {
                 .addOnFailureListener {
                     if (!isDestroyed) {
                         //imageProxy.close()
+                        readFailureCounter += 1
+                        if (readFailureCounter >= 15){
+                            sendAckToSender(connectionSocket, -2)
+                            readFailureCounter = 0
+                        }
                         resultTextView.text = "Wait to scan a qr code"
                     }
                 }

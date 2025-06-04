@@ -46,6 +46,8 @@ import java.io.IOException
 import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.util.zip.CRC32
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.time.TimeSource
 
 class FilesSystem : Fragment() {
@@ -56,6 +58,11 @@ class FilesSystem : Fragment() {
     private var nrPck = 0
 
     private val ackChannel = Channel<Int>(Channel.UNLIMITED)
+    private var ackCounter: Int = 0
+
+    private var packageNumber: Int = 1
+    private val maxSliceSize: Int = SenderReaderVars.payloadLength * 4/3
+    private var sliceSize: Int = maxSliceSize
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -150,21 +157,50 @@ class FilesSystem : Fragment() {
                     val timeSource = TimeSource.Monotonic
 
                     while (iterator.hasNext()) {
-                        // time0 = time
-                        val mark = timeSource.markNow()
-                        val packageData = iterator.next()
-                        val content = packageData.content
-                        Log.d(TAG, "Processing content: $content")
-                        localQRGenerate(packageData)
-                        // delta = time - time0  = > delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
 
-                        // wait ACK pentru pachetul primit
-                        val ackId = ackChannel.receive()
-                        if (ackId != packageData.pckId) {
-                            Log.e("SYNC", "Pachetul primit ($ackId) nu corespunde cu cel trimis (${packageData.pckId})")
-                            break
+                        val packageData = iterator.next()
+                        var sent = 0
+                        val content = packageData.content
+
+                        while (sent < content.length){
+                            //packageData.pckId = packageNumber
+                            val dataToSend = content.substring(sent, min(content.length,sent + sliceSize))
+                            val pckToSend = PackageData(packageNumber, computeCRC(dataToSend), dataToSend.length, dataToSend)
+
+                            Log.d(TAG, "Processing content: $dataToSend")
+                            localQRGenerate(pckToSend)
+                            // delta = time - time0  = > delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
+
+                            // wait ACK pentru pachetul primit
+                            val ackId = ackChannel.receive()
+                            Log.d("POINT", "($packageNumber) (${dataToSend.length}))")
+                            if(ackId == packageNumber){
+                                ackCounter += 1
+                                if(ackCounter >= 4){
+                                    sliceSize = min(maxSliceSize, sliceSize * 2)
+                                    ackCounter = 0
+                                }
+                                Log.d("YEP", "($packageNumber) citit corect ($ackCounter)")
+                                packageNumber += 1
+                                sent += dataToSend.length
+                            }
+                            else if(ackId == -2){
+                                ackCounter = 0
+                                sliceSize = max(sliceSize/2, 11)
+                                Log.d("NOPE", "cerere de micsorare")
+                            }
+                            else if (ackId != packageData.pckId) {
+                                Log.e("SYNC", "Pachetul primit ($ackId) nu corespunde cu cel trimis (${packageData.pckId})")
+                                //break
+                            }
                         }
+
                     }
+
+                    /* --------------------last frame------------------------------- */
+                    localQRGenerateLastFrame("END")
+                    val ackId = ackChannel.receive()
+                    /* --------------------------------------------------- */
 
                     requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(null)
                     //textEncodeDataButtonPressed.text = stringBuilder.toString()
@@ -193,6 +229,8 @@ class FilesSystem : Fragment() {
                         id?.let { ackChannel.send(it) }
                         if (id == -1){
                             client.close()
+                            Log.d("CLOSE_CONN", "All database entries deleted")
+                            break
                         }
                     }
                 }
@@ -330,6 +368,33 @@ class FilesSystem : Fragment() {
         } else {
             return false
         }
+    }
+
+
+    fun localQRGenerateLastFrame(endString: String): Boolean {
+
+        val windowManager = requireContext().getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val display: Display = windowManager.defaultDisplay
+        val point = Point()
+        display.getSize(point)
+
+        val width = point.x
+        val height = point.y
+        var dimen = if (width < height) width else height
+
+        dimen = (dimen * SenderReaderVars.qrSizeScaleFactor).toInt() //dimen = dimen * 3 / 4
+
+        val bitmap = generateQRCode(
+            endString,
+            dimen,
+            errorCorrectionLevel = ErrorCorrectionLevel.L
+        ) //val qrEncoder = QRGEncoder(data, null, QRGContents.Type.TEXT, dimen)
+        if (bitmap != null) {
+
+            requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(bitmap)
+            return true
+        }
+        return false
     }
 
     fun localQRGenerate(packageData: PackageData): Boolean {

@@ -96,7 +96,10 @@ class FilesSystem : Fragment() {
                         nrPck = 0
 
                         lifecycleScope.launch {
-                            deleteAllDatabaseEntries(requireContext())
+
+                            deleteAllDatabaseEntriesByteArray(requireContext())
+
+                            //deleteAllDatabaseEntries(requireContext())
                             val success = readFileContent(requireContext(), uri)
                             if (success) {
                                 Log.i(TAG, "File read successfully")
@@ -125,7 +128,11 @@ class FilesSystem : Fragment() {
                     fetchLocation()
                     //delay(1000)
                     //send first pck x times - each time will update the payload with the remaining time
-                    val database = PackageDataDB.getDatabase(requireContext())
+                    //val database = PackageDataDB.getDatabase(requireContext())
+                    //val dao = database.dao
+
+
+                    val database = BytePackageDataDB.getDatabase(requireContext())
                     val dao = database.dao
                     var timeStart = SenderReaderVars.initialSyncTimeMs // 7s? >> time
 
@@ -160,11 +167,12 @@ class FilesSystem : Fragment() {
 
                         val packageData = iterator.next()
                         var sent = 0
-                        val content = packageData.content
+                        val content = packageData.byteArray
 
-                        while (sent < content.length){
+                        while (sent < content.size){
                             //packageData.pckId = packageNumber
-                            val dataToSend = content.substring(sent, min(content.length,sent + sliceSize))
+                            val bytesToSend = content.copyOfRange(sent,min(content.size,sent + sliceSize))
+                            val dataToSend = Base64.encodeToString(bytesToSend, Base64.NO_WRAP)
                             val pckToSend = PackageData(packageNumber, computeCRC(dataToSend), dataToSend.length, dataToSend)
 
                             Log.d(TAG, "Processing content: $dataToSend")
@@ -182,7 +190,7 @@ class FilesSystem : Fragment() {
                                 }
                                 Log.d("YEP", "($packageNumber) citit corect ($ackCounter)")
                                 packageNumber += 1
-                                sent += dataToSend.length
+                                sent += bytesToSend.size
                             }
                             else if(ackId == -2){
                                 ackCounter = 0
@@ -239,6 +247,17 @@ class FilesSystem : Fragment() {
             }
         }
     }
+
+    @SuppressLint("SuspiciousIndentation")
+    private suspend fun deleteAllDatabaseEntriesByteArray(context: Context) {
+        val database = BytePackageDataDB.getDatabase(context)
+        val dao = database.dao
+        withContext(Dispatchers.IO) {
+            dao.deleteAll()
+        }
+        Log.d(TAG, "All database entries deleted")
+    }
+
 
     @SuppressLint("SuspiciousIndentation")
     private suspend fun deleteAllDatabaseEntries(context: Context) {
@@ -312,10 +331,10 @@ class FilesSystem : Fragment() {
     }
 
     private suspend fun readFileContent(context: Context, uri: Uri?): Boolean {
-        val database = PackageDataDB.getDatabase(context)
+        val database = BytePackageDataDB.getDatabase(context)
 
         var chunkSize =
-            SenderReaderVars.payloadLength - SenderReaderVars.exceptPayload //chr per pachet(bytes?)
+            SenderReaderVars.payloadLength // - SenderReaderVars.exceptPayload //chr per pachet(bytes?)
 
         if (uri != null) {
             return try {
@@ -344,11 +363,10 @@ class FilesSystem : Fragment() {
                         i++
                         withContext(Dispatchers.IO) {
                             database.dao.insertPck(
-                                PackageData(
+                                BytePackageData(
                                     i,
-                                    crc,
-                                    chunkString.length,
-                                    chunkString
+                                    chunk.size,
+                                    chunk
                                 )
                             )
                         }

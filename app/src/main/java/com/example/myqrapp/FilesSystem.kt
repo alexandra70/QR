@@ -58,6 +58,7 @@ class FilesSystem : Fragment() {
     private var nrPck = 0
 
     private val ackChannel = Channel<Int>(Channel.UNLIMITED)
+    private val sizeChannel = Channel<Int>(Channel.UNLIMITED)
     private var ackCounter: Int = 0
 
     private var packageNumber: Int = 1
@@ -183,6 +184,7 @@ class FilesSystem : Fragment() {
                             val ackId = ackChannel.receive()
                             Log.d("POINT", "($packageNumber) (${dataToSend.length}))")
                             if(ackId == packageNumber){
+                                val lengthRead = sizeChannel.receive()
                                 ackCounter += 1
                                 if(ackCounter >= 4){
                                     sliceSize = min(maxSliceSize, sliceSize * 2)
@@ -190,7 +192,7 @@ class FilesSystem : Fragment() {
                                 }
                                 Log.d("YEP", "($packageNumber) citit corect ($ackCounter)")
                                 packageNumber += 1
-                                sent += bytesToSend.size
+                                sent += lengthRead
                             }
                             else if(ackId == -2){
                                 ackCounter = 0
@@ -232,7 +234,34 @@ class FilesSystem : Fragment() {
                     val reader = BufferedReader(InputStreamReader(client.getInputStream()))
                     val ack = reader.readLine()
                     Log.d("ACK_SERVER", "Primit: $ack")
+
                     if (ack.startsWith("ACK:")) {
+                        val parts = ack.split(":")
+                        if (parts.size >= 3) {
+                            val id = parts[1].toIntOrNull()
+                            val length = parts[2].toIntOrNull()
+                            Log.d("ACK_RECEIVED", "Pachet $id cu lungime $length")
+
+                            if (id == -1){
+                                client.close()
+                                Log.d("CLOSE_CONN", "All database entries deleted")
+                                break
+                            }
+
+                            if (id != null) {
+                                ackChannel.send(id)
+                                if(id > 0 && length != null){
+                                    sizeChannel.send(length)
+                                }
+                            }
+
+                        } else {
+                            Log.e("ACK_SERVER", "Format invalid: $ack")
+                        }
+                    }
+
+
+                    /*if (ack.startsWith("ACK:")) {
                         val id = ack.removePrefix("ACK:").toIntOrNull()
                         id?.let { ackChannel.send(it) }
                         if (id == -1){
@@ -240,7 +269,7 @@ class FilesSystem : Fragment() {
                             Log.d("CLOSE_CONN", "All database entries deleted")
                             break
                         }
-                    }
+                    }*/
                 }
             } catch (e: Exception) {
                 Log.e("ACK LA SENDER", "Eroare server", e)

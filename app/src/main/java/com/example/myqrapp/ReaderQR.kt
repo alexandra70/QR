@@ -33,14 +33,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
 import java.net.Socket
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.TimeSource
 
@@ -53,15 +51,12 @@ open class ReaderQR : AppCompatActivity() {
     private lateinit var barcodeScanner: BarcodeScanner
     private var cameraProvider: ProcessCameraProvider? = null
 
-    private lateinit var databaseR: PackageReceivedDB
-    private lateinit var daoR: DaoReceivedPackage
+    private lateinit var databaseR: BytePackageDataDB
+    private lateinit var daoR: BytePackageDataDao
     private lateinit var connectionSocket: Socket
     private lateinit var outPrintWriter: PrintWriter
     private var readFailureCounter: Int = 0
 
-    val baos = ByteArrayOutputStream()
-
-    var latestAnalyzedTimestamp = 0L;
     /*
     A not yet analyzed first frame
     After the first frame is read and the time is extracted this should
@@ -70,15 +65,8 @@ open class ReaderQR : AppCompatActivity() {
     //var analyzedFirstImage = 0;
 
     private val firstFrame = AtomicInteger(0)
-    private val nrPckToProcess = AtomicInteger(0)
-    //private val currentFrameId = AtomicInteger(0)
-
     private val prevFrameId = AtomicInteger(0)
-
-    var timeBeforeSeq = AtomicInteger(0)
-    var framesTime = AtomicInteger(0)
-
-    var ableToProc = AtomicBoolean(false)
+    private val endFrame = AtomicInteger(0)
 
     //todo
     lateinit var ip: String
@@ -96,8 +84,9 @@ open class ReaderQR : AppCompatActivity() {
 
         /* Init dataBase for received pck */
         //sterge linie
-        databaseR = PackageReceivedDB.getDatabase(applicationContext)
-        daoR = databaseR.DAO_RECEIVED_PACKAGE
+
+        databaseR = BytePackageDataDB.getDatabase(applicationContext)
+        daoR = databaseR.dao
 
         val requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission()
@@ -215,36 +204,21 @@ open class ReaderQR : AppCompatActivity() {
                             /* Store the time for the first frame */
                             /* Scanning process should start after timeBeforeSeq + latestAnalyzedTimestamp is >= than
                                 * the time stamp of current analyzed photo */
-                            //firstFrame.set(1)
 
                             if (checkFirstPck(result)) {
 
-                                val timeAux = extractTime(result)
-                                timeBeforeSeq.set(timeAux)
-                                nrPckToProcess.set(extractNrPck(result))
-                                framesTime.set(extractFramesTime(result))
-
-                                //?string atomic?
                                 ip = extractIp(result)
 
                                 runOnUiThread {
                                     resultTextView.text = "res: $result"
                                 }
 
-                                Log.d(
-                                    "ReaderQR.kt",
-                                    "[timp inceptu]= " + timeBeforeSeq.get()
-                                            + " [nr pck]= " + nrPckToProcess.get()
-                                            + " [trimp intre cadre]= " + framesTime.get()
-                                            + "ip = " + ip
-                                )
-
                                 lifecycleScope.launch(Dispatchers.IO) {
                                     try {
                                         Log.d("Before CONNECTED", "inaininte")
                                         connectionSocket = Socket(ip, SenderReaderVars.PORT)
                                         Log.d("CONNECTED", "S-a conectat")
-                                        sendAckToSender(connectionSocket, 0)
+                                        sendAckToSender(connectionSocket, 0, 0)
 
                                         outPrintWriter = PrintWriter(connectionSocket.getOutputStream(), true)
 
@@ -281,32 +255,15 @@ open class ReaderQR : AppCompatActivity() {
         }
     }
 
-
-   /* private suspend fun writeToFileCompat() {
-        val file = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "compus.bin")
-
-        withContext(Dispatchers.IO) {
-            FileOutputStream(file).use { outputStream ->
-                val pachete = daoR.getPckDataBySEQnr().first()
-                for (pachet in pachete.sortedBy { it.pckId }) {
-                    val bytes = pachet.content.toByteArray(Charsets.ISO_8859_1)
-                    outputStream.write(bytes)
-                }
-            }
-        }
-
-        Log.d("RECONSTRUCT", "Fișier salvat la: ${file.absolutePath}")
-    } */
-
     private suspend fun writeToFile() {
         val downloadsDir =
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+
         val file = File(downloadsDir, "compus")
 
         val outputStream = withContext(Dispatchers.IO) {
             FileOutputStream(file)
         }
-
 
         val pck = daoR.getPckDataBySEQnr().first()
 
@@ -315,9 +272,9 @@ open class ReaderQR : AppCompatActivity() {
             val packageData = iterator.next()
             //val content = packageData.content
             //val bytes = packageData.content.toByteArray(Charsets.ISO_8859_1)
-            val bytes = Base64.decode(packageData.content, Base64.NO_WRAP)
+
             withContext(Dispatchers.IO) {
-                outputStream.write(bytes)
+                outputStream.write(packageData.byteArray)
             }
 
         }
@@ -348,21 +305,6 @@ open class ReaderQR : AppCompatActivity() {
             return false
         }
 
-        if (!result.contains("Time:")) {
-            Log.d("Deserializer", "Eroare: Lipseste campul Time")
-            return false
-        }
-
-        if (!result.contains("NrPck:")) {
-            Log.d("Deserializer", "Eroare: Lipseste campul NrPck")
-            return false
-        }
-
-        if (!result.contains("FramesTime:")) {
-            Log.d("Deserializer", "Eroare: Lipseste campul FramesTime")
-            return false
-        }
-
         return true
     }
 
@@ -375,7 +317,7 @@ open class ReaderQR : AppCompatActivity() {
             val mediaImage = imageProxy.image ?: run {
                 readFailureCounter += 1
                 if (readFailureCounter >= 15){
-                    sendAckToSender(connectionSocket, -2)
+                    sendAckToSender(connectionSocket, -2, 0)
                     readFailureCounter = 0
                 }
                 imageProxy.close()
@@ -404,7 +346,7 @@ open class ReaderQR : AppCompatActivity() {
                         )
                         readFailureCounter += 1
                         if (readFailureCounter >= 15) {
-                            sendAckToSender(connectionSocket, -2)
+                            sendAckToSender(connectionSocket, -2, 0)
                             readFailureCounter = 0
                         }
                     }
@@ -416,27 +358,29 @@ open class ReaderQR : AppCompatActivity() {
                             // if strcmp (PackadeData, "END") != 0
                             readFailureCounter = 0
                             if (result == "END") {
-                                sendAckToSender(connectionSocket, -1)
+                                if(endFrame.compareAndSet(0,1)) {
+                                    sendAckToSender(connectionSocket, -1, 0)
 
-                                //daca am primit ultimul cadru
-                                /* go back to parent activity */
-                                Log.d(
-                                    "ReaderQR.kt",
-                                    "Toate pachetele procesate - închidem camera manual"
-                                )
+                                    //daca am primit ultimul cadru
+                                    /* go back to parent activity */
+                                    Log.d(
+                                        "ReaderQR.kt",
+                                        "Toate pachetele procesate - închidem camera manual"
+                                    )
 
-                                runOnUiThread {
-                                    resultTextView.text = "Succes"
-                                }
+                                    runOnUiThread {
+                                        resultTextView.text = "Succes"
+                                    }
 
-                                connectionSocket.close()
+                                    connectionSocket.close()
 
-                                //scriu fisier
-                                lifecycleScope.launch {
-                                    writeToFile()
-                                    delay(5000)
-                                    cameraProvider?.unbindAll()
-                                    finish()
+                                    //scriu fisier
+                                    lifecycleScope.launch {
+                                        writeToFile()
+                                        delay(5000)
+                                        cameraProvider?.unbindAll()
+                                        finish()
+                                    }
                                 }
                             } else {
 
@@ -455,18 +399,19 @@ open class ReaderQR : AppCompatActivity() {
                                         resultTextView.text = "res: $result"
                                     }
 
+                                    // TODO check CRC
+
                                     lifecycleScope.launch {
-                                        val startInsert = SystemClock.elapsedRealtime()
-                                        databaseR.DAO_RECEIVED_PACKAGE.insertPck(
-                                            ReceivedPackage(
+                                        var pckBytesArray = Base64.decode(pck.content, Base64.NO_WRAP)
+                                        databaseR.dao.insertPck(
+                                            BytePackageData(
                                                 pck.pckId,
-                                                pck.crc,
-                                                pck.length,
-                                                pck.content
+                                                pckBytesArray.size,
+                                                pckBytesArray
                                             )
                                         )
                                         //trimit ack si dupa verific cat timp a trecut
-                                        sendAckToSender(connectionSocket, pck.pckId)
+                                        sendAckToSender(connectionSocket, pck.pckId, pckBytesArray.size)
                                     }
 
                                 } else {
@@ -494,7 +439,7 @@ open class ReaderQR : AppCompatActivity() {
                         //imageProxy.close()
                         readFailureCounter += 1
                         if (readFailureCounter >= 15){
-                            sendAckToSender(connectionSocket, -2)
+                            sendAckToSender(connectionSocket, -2, 0)
                             readFailureCounter = 0
                         }
                         resultTextView.text = "Wait to scan a qr code"
@@ -511,11 +456,11 @@ open class ReaderQR : AppCompatActivity() {
         }
     }
 
-    private fun sendAckToSender(socket: Socket, pckId: Int) {
+    private fun sendAckToSender(socket: Socket, pckId: Int, pckBytesArrayLength : Int) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 Log.d("sendAckToSender", "inainte sa trimit ack reader")
-                outPrintWriter.println("ACK:$pckId")
+                outPrintWriter.println("ACK:$pckId:$pckBytesArrayLength")
                 Log.d("sendAckToSender", "dupa ce am trimis ack reader")
             } catch (e: Exception) {
                 Log.e("ACK READER QR", "nu merge ack in reader....", e)

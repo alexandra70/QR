@@ -48,7 +48,6 @@ import java.net.ServerSocket
 import java.util.zip.CRC32
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.time.TimeSource
 
 class FilesSystem : Fragment() {
 
@@ -64,6 +63,8 @@ class FilesSystem : Fragment() {
     private var packageNumber: Int = 1
     private val maxSliceSize: Int = SenderReaderVars.payloadLength * 4/3
     private var sliceSize: Int = maxSliceSize
+
+    private var fileName: String? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -85,6 +86,10 @@ class FilesSystem : Fragment() {
                 if (result.resultCode == Activity.RESULT_OK) {
                     val selectedFileUri = result.data?.data
                     selectedFileUri?.let { uri ->
+
+                        val name = getFileNameFromUri(requireContext(), uri)
+                        fileName = name ?: "unknown_file"
+
                         Log.i(TAG, "a deschis fisierul asta $uri")
 
                         //reset value
@@ -144,7 +149,7 @@ class FilesSystem : Fragment() {
                     )
 
                     //               ACK PCK 0                 //
-                    processFirstPck(timeStart)
+                    processFirstPck()
                     val firstAck = ackChannel.receive()
                     if (firstAck != 0) {
                         Log.e("SYNC", "ACK invalid pentru primul pachet ($firstAck), opresc transmisia")
@@ -152,17 +157,10 @@ class FilesSystem : Fragment() {
                     }
                     Log.d("SYNC", "ACK primit pentru pachetul 0, începem transmisia cadrului principal")
 
-                    val endTimeTest = SystemClock.elapsedRealtime()
-                    Log.d(
-                        "cand se terimna, dar diferenta",
-                        (endTimeTest - startTimeTest).toString()
-                    )
-
                     //       ACK SEQ                           //
                     //dao.getPckDataBySEQnr().collect { packageDataList ->
                     val packageDataList = dao.getPckDataBySEQnr().first()
                     val iterator = packageDataList.iterator()
-                    val timeSource = TimeSource.Monotonic
 
                     while (iterator.hasNext()) {
 
@@ -244,6 +242,7 @@ class FilesSystem : Fragment() {
 
                             if (id == -1){
                                 client.close()
+                                serverSocket.close()
                                 Log.d("CLOSE_CONN", "All database entries deleted")
                                 break
                             }
@@ -259,22 +258,25 @@ class FilesSystem : Fragment() {
                             Log.e("ACK_SERVER", "Format invalid: $ack")
                         }
                     }
-
-
-                    /*if (ack.startsWith("ACK:")) {
-                        val id = ack.removePrefix("ACK:").toIntOrNull()
-                        id?.let { ackChannel.send(it) }
-                        if (id == -1){
-                            client.close()
-                            Log.d("CLOSE_CONN", "All database entries deleted")
-                            break
-                        }
-                    }*/
                 }
             } catch (e: Exception) {
                 Log.e("ACK LA SENDER", "Eroare server", e)
             }
         }
+    }
+
+    private fun getFileNameFromUri(context: Context, uri: Uri): String? {
+        var name: String? = null
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val index = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) {
+                    name = it.getString(index)
+                }
+            }
+        }
+        return name
     }
 
     @SuppressLint("SuspiciousIndentation")
@@ -287,33 +289,17 @@ class FilesSystem : Fragment() {
         Log.d(TAG, "All database entries deleted")
     }
 
-
-    @SuppressLint("SuspiciousIndentation")
-    private suspend fun deleteAllDatabaseEntries(context: Context) {
-        val database = PackageDataDB.getDatabase(context)
-        val dao = database.dao
-            withContext(Dispatchers.IO) {
-                dao.deleteAll()
-            }
-            Log.d(TAG, "All database entries deleted")
-    }
-
     fun getLocalIpAddress(): String {
         val wm = requireContext().getSystemService(Context.WIFI_SERVICE) as WifiManager
         val ip = wm.connectionInfo.ipAddress
         return String.format("%d.%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff)
     }
-    private fun processFirstPck(time: Long) {
+    private fun processFirstPck() {
 
         val stringBuilder = StringBuilder()
-        stringBuilder.append("Time:")
-        stringBuilder.append(time.toString())
 
-        stringBuilder.append("NrPck:")
-        stringBuilder.append(nrPck.toString())
-
-        stringBuilder.append("FramesTime:")
-        stringBuilder.append(SenderReaderVars.packetDelayMs)
+        stringBuilder.append("FileName:")
+        stringBuilder.append(fileName)
 
         val ip = getLocalIpAddress()
         stringBuilder.append("IP:$ip")
@@ -322,14 +308,11 @@ class FilesSystem : Fragment() {
         localQRGenerate(PackageData(
             0,
             0,
-            5 + time.toString().length
-                    + 6 + nrPck.toString().length
-                    + 11 + SenderReaderVars.packetDelayMs.toString().length
+            9 + fileName.toString().length
                     + 3 + ip.toString().length,
             stringBuilder.toString()
         ))
 
-        Log.d("?","timpul de procesaer si cum arata payload : " + stringBuilder.toString() + " " +time + "cate pachete " + nrPck)
     }
 
     /* Loop to send first pck */
@@ -400,9 +383,6 @@ class FilesSystem : Fragment() {
                             )
                         }
 
-                        Log.d("important = lungime string dupa iso...", chunkString.length.toString())
-                        //Log.d("important", chunkString.length.toString())
-                        Log.d("gen 1/2 pck", i.toString() + " " + chunkString + " " + "caut ce adaug in db   ")
                         nrPck++;
                     }
                 }

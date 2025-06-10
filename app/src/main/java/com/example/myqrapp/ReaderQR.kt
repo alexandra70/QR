@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.os.Bundle
 import android.os.Environment
-import android.os.SystemClock
 import android.os.Trace
 import android.util.Base64
 import android.util.Log
@@ -62,7 +61,6 @@ open class ReaderQR : AppCompatActivity() {
     After the first frame is read and the time is extracted this should
     have the value eq to one - that means the next first-frame-seq will be dropped
     */
-    //var analyzedFirstImage = 0;
 
     private val firstFrame = AtomicInteger(0)
     private val prevFrameId = AtomicInteger(0)
@@ -70,6 +68,7 @@ open class ReaderQR : AppCompatActivity() {
 
     //todo
     lateinit var ip: String
+    lateinit var fileName: String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -207,6 +206,7 @@ open class ReaderQR : AppCompatActivity() {
 
                             if (checkFirstPck(result)) {
 
+                                fileName = extractFileName(result)
                                 ip = extractIp(result)
 
                                 runOnUiThread {
@@ -259,7 +259,8 @@ open class ReaderQR : AppCompatActivity() {
         val downloadsDir =
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
 
-        val file = File(downloadsDir, "compus")
+        //val file = File(downloadsDir, "compus")
+        val file = File(downloadsDir, fileName)
 
         val outputStream = withContext(Dispatchers.IO) {
             FileOutputStream(file)
@@ -326,13 +327,7 @@ open class ReaderQR : AppCompatActivity() {
 
             //image is converted into an input image
             //rotationDegrees used for accurate scan - image is rotated correctly
-
-            val startPhotoMedia = SystemClock.elapsedRealtime()
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-            val endPhotoMedia = SystemClock.elapsedRealtime()
-            //Log.d("Timing", "Durata Photo Media: ${endPhotoMedia - startPhotoMedia} ms")
-
-            //Trace.beginSection("BarcodeScanner processing")
 
             //process the image
             barcodeScanner.process(image)
@@ -490,27 +485,11 @@ open class ReaderQR : AppCompatActivity() {
         barcodeScanner.close()*/
     }
 
-    private fun extractTime(scannedText: String): Int {
-
+    private fun extractFileName(scannedText: String): String {
         val pck = PackageData.deserializePck(scannedText)
-        val indTime = pck.content.indexOf("Time:") + 5
-        val indNrPck = pck.content.indexOf("NrPck:") // len = 6
-        Log.d("ReaderQR.kt"," aici un pck " + pck.pckId.toString() + " " + pck.crc + " " + pck.length + " " + pck.content)
-        return pck.content.substring(indTime, indNrPck).toInt()
-    }
-
-    private fun extractNrPck(scannedText: String): Int {
-        val pck = PackageData.deserializePck(scannedText)
-        val indNrPck = pck.content.indexOf("NrPck:") + 6
-        val indFramesTime = pck.content.indexOf("FramesTime:") // len = 6
-        return pck.content.substring(indNrPck, indFramesTime).toInt()
-    }
-
-    private fun extractFramesTime(scannedText: String): Int {
-        val pck = PackageData.deserializePck(scannedText)
-        val indFramesTime = pck.content.indexOf("FramesTime:") + 11
+        val indFileName = pck.content.indexOf("FileName:") + 9
         val indIP = pck.content.indexOf("IP:")
-        return pck.content.substring(indFramesTime, indIP).toInt()
+        return pck.content.substring(indFileName, indIP)
     }
     private fun extractIp(scannedText: String): String {
         val pck = PackageData.deserializePck(scannedText)

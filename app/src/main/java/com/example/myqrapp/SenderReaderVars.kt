@@ -15,10 +15,14 @@ object SenderReaderVars {
     var exceptPayload: Int = 40
 
     // payload lenght (cate caractere are in payload)
-    var payloadLength: Int = 2112//2816 //124, 983, 983*2 ok
+    var payloadLength: Int = 2048//2732 cred       //2816 //124, 983, 983*2 ok
 
     //cat la suta din ecran sa folosesc
     var qrSizeScaleFactor: Float = 1.00f // 3/4 75% din ecran
+
+    // factorul de feliere
+    val SLICING_FACTOR = 2
+    val MIN_SLICE_SIZE = 16
 
 
     //cat ar trebui sa fie lungimea totala a unui frame-pachet pe care

@@ -45,6 +45,7 @@ import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
 import java.net.ServerSocket
+import java.net.Socket
 import java.util.zip.CRC32
 import kotlin.math.max
 import kotlin.math.min
@@ -61,10 +62,14 @@ class FilesSystem : Fragment() {
     private var ackCounter: Int = 0
 
     private var packageNumber: Int = 1
-    private val maxSliceSize: Int = SenderReaderVars.payloadLength * 4/3
+    private val maxSliceSize: Int = SenderReaderVars.payloadLength
     private var sliceSize: Int = maxSliceSize
 
     private var fileName: String? = null
+
+    private lateinit var serverSocket: ServerSocket
+    private lateinit var client: Socket
+
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -162,7 +167,12 @@ class FilesSystem : Fragment() {
                     val packageDataList = dao.getPckDataBySEQnr().first()
                     val iterator = packageDataList.iterator()
 
+                    var iteratii = 0
+
                     while (iterator.hasNext()) {
+
+                        iteratii++
+                        Log.d("nr inter", iteratii.toString())
 
                         val packageData = iterator.next()
                         var sent = 0
@@ -185,7 +195,7 @@ class FilesSystem : Fragment() {
                                 val lengthRead = sizeChannel.receive()
                                 ackCounter += 1
                                 if(ackCounter >= 4){
-                                    sliceSize = min(maxSliceSize, sliceSize * 2)
+                                    sliceSize = min(maxSliceSize, sliceSize * SenderReaderVars.SLICING_FACTOR)
                                     ackCounter = 0
                                 }
                                 Log.d("YEP", "($packageNumber) citit corect ($ackCounter)")
@@ -194,7 +204,7 @@ class FilesSystem : Fragment() {
                             }
                             else if(ackId == -2){
                                 ackCounter = 0
-                                sliceSize = max(sliceSize/2, 11)
+                                sliceSize = max(sliceSize / SenderReaderVars.SLICING_FACTOR, SenderReaderVars.MIN_SLICE_SIZE)
                                 Log.d("NOPE", "cerere de micsorare")
                             }
                             else if (ackId != packageData.pckId) {
@@ -226,8 +236,8 @@ class FilesSystem : Fragment() {
     private fun startAckServer() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val serverSocket = ServerSocket(SenderReaderVars.PORT)
-                val client = serverSocket.accept()
+                serverSocket = ServerSocket(SenderReaderVars.PORT)
+                client = serverSocket.accept()
                 while (true) {
                     val reader = BufferedReader(InputStreamReader(client.getInputStream()))
                     val ack = reader.readLine()
@@ -241,8 +251,7 @@ class FilesSystem : Fragment() {
                             Log.d("ACK_RECEIVED", "Pachet $id cu lungime $length")
 
                             if (id == -1){
-                                client.close()
-                                serverSocket.close()
+                                requireActivity().finish()
                                 Log.d("CLOSE_CONN", "All database entries deleted")
                                 break
                             }
@@ -263,6 +272,24 @@ class FilesSystem : Fragment() {
                 Log.e("ACK LA SENDER", "Eroare server", e)
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+
+        try {
+            client.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+
+        try {
+            serverSocket.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+
+        Log.d("CLOSE SOCKETS","Sockets closed in onDestroy (Fragment)...")
     }
 
     private fun getFileNameFromUri(context: Context, uri: Uri): String? {
@@ -304,12 +331,16 @@ class FilesSystem : Fragment() {
         val ip = getLocalIpAddress()
         stringBuilder.append("IP:$ip")
 
+        val port = SenderReaderVars.PORT
+        stringBuilder.append("PORT:$port")
+
         //send data
         localQRGenerate(PackageData(
             0,
             0,
             9 + fileName.toString().length
-                    + 3 + ip.toString().length,
+                    + 3 + ip.toString().length
+                    + 5 + port.toString().length,
             stringBuilder.toString()
         ))
 

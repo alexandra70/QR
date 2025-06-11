@@ -56,17 +56,12 @@ open class ReaderQR : AppCompatActivity() {
     private lateinit var outPrintWriter: PrintWriter
     private var readFailureCounter: Int = 0
 
-    /*
-    A not yet analyzed first frame
-    After the first frame is read and the time is extracted this should
-    have the value eq to one - that means the next first-frame-seq will be dropped
-    */
-
     private val firstFrame = AtomicInteger(0)
     private val prevFrameId = AtomicInteger(0)
     private val endFrame = AtomicInteger(0)
 
     //todo
+    private var PORT: Int = -1
     lateinit var ip: String
     lateinit var fileName: String
 
@@ -82,8 +77,6 @@ open class ReaderQR : AppCompatActivity() {
         barcodeScanner = BarcodeScanning.getClient()
 
         /* Init dataBase for received pck */
-        //sterge linie
-
         databaseR = BytePackageDataDB.getDatabase(applicationContext)
         daoR = databaseR.dao
 
@@ -92,8 +85,6 @@ open class ReaderQR : AppCompatActivity() {
         ) { isGranted: Boolean ->
             if (isGranted) {
                 lifecycleScope.launch {
-                    //sterg baza de date inainte sa o folosesc
-                    //sterge linie
                     deleteAllDatabaseEntries()
                     startCamera()
                 }
@@ -151,8 +142,6 @@ open class ReaderQR : AppCompatActivity() {
             val imageAnalyzer = ImageAnalysis.Builder()
                 .setResolutionSelector(resolutionSelector)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                //.setBackpressureStrategy(ImageAnalysis.STRATEGY_BLOCK_PRODUCER)
-                //.setImageQueueDepth(1) //new
                 .build()
                 .also {
                     it.setAnalyzer(cameraExecutor) { proxy ->
@@ -162,7 +151,6 @@ open class ReaderQR : AppCompatActivity() {
 
                         } else {
                             processImageProxySeq(proxy)
-                            //Log.d("ReaderQR.kt","a procesat pachetul din seq " + nrPckToProcess.get())
                         }
                     }
                 }
@@ -208,6 +196,7 @@ open class ReaderQR : AppCompatActivity() {
 
                                 fileName = extractFileName(result)
                                 ip = extractIp(result)
+                                PORT = extractPORT(result)
 
                                 runOnUiThread {
                                     resultTextView.text = "res: $result"
@@ -216,7 +205,7 @@ open class ReaderQR : AppCompatActivity() {
                                 lifecycleScope.launch(Dispatchers.IO) {
                                     try {
                                         Log.d("Before CONNECTED", "inaininte")
-                                        connectionSocket = Socket(ip, SenderReaderVars.PORT)
+                                        connectionSocket = Socket(ip, PORT)
                                         Log.d("CONNECTED", "S-a conectat")
                                         sendAckToSender(connectionSocket, 0, 0)
 
@@ -226,7 +215,6 @@ open class ReaderQR : AppCompatActivity() {
                                         Log.e("RETEA", "Eroare la conectare socket", e)
                                     }
                                 }
-                                //baos.write(decoded)
                             } else {
                                 //nu am inca primul pachet corect
                                 firstFrame.getAndSet(0)
@@ -245,7 +233,6 @@ open class ReaderQR : AppCompatActivity() {
             //after the task was completed the addOnCompleteListener is called
                 if(firstFrame.get() == 0) {
                     //imageProxy.close()
-                    //Log.d("[nu primul cadru]","ce oridine e asta  ?")
                 }
 
                 imageProxy.close()
@@ -356,15 +343,9 @@ open class ReaderQR : AppCompatActivity() {
                                 if(endFrame.compareAndSet(0,1)) {
                                     sendAckToSender(connectionSocket, -1, 0)
 
-                                    //daca am primit ultimul cadru
                                     /* go back to parent activity */
-                                    Log.d(
-                                        "ReaderQR.kt",
-                                        "Toate pachetele procesate - închidem camera manual"
-                                    )
-
                                     runOnUiThread {
-                                        resultTextView.text = "Succes"
+                                        resultTextView.text = "Success"
                                     }
 
                                     connectionSocket.close()
@@ -382,9 +363,6 @@ open class ReaderQR : AppCompatActivity() {
                                 val pck = PackageData.deserializePck(
                                     result
                                 )
-                                // else
-                                // inchizi sandramaua, socket, exit rutina asta etc etc
-
                                 if (pck.pckId == (prevFrameId.get())) {
                                     Log.d("ReaderQR.kt", "Pachet ${pck.pckId} recitit - ignore")
                                 } else if (pck.pckId == (prevFrameId.get() + 1)) {
@@ -465,6 +443,17 @@ open class ReaderQR : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        Log.d("ReaderQR", "onStop called")
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                Log.d("sendAckToSender", "premature destroy")
+                outPrintWriter.println("ACK:-1:0")
+                connectionSocket.close()
+            } catch (e: Exception) {
+                Log.e("ACK READER QR", "...", e)
+            }
+        }
         try {
             Log.d("ReaderQR", "onStop - shutting down camera and executor")
             cameraProvider?.unbindAll()
@@ -483,6 +472,13 @@ open class ReaderQR : AppCompatActivity() {
         cameraExecutor.awaitTermination(1, TimeUnit.SECONDS)
         cameraProvider?.unbindAll()
         barcodeScanner.close()*/
+
+        /*
+        try {
+            connectionSocket.close()
+        } catch (e: Exception) {
+            Log.e("ReaderQR", "socket_stop", e)
+        }*/
     }
 
     private fun extractFileName(scannedText: String): String {
@@ -492,10 +488,17 @@ open class ReaderQR : AppCompatActivity() {
         return pck.content.substring(indFileName, indIP)
     }
     private fun extractIp(scannedText: String): String {
-        val pck = PackageData.deserializePck(scannedText)
-        return pck.content.substringAfterLast("IP:").toString()
-    }
 
+        val pck = PackageData.deserializePck(scannedText)
+        val indIP = pck.content.indexOf("IP:") + 3
+        val indPORT = pck.content.indexOf("PORT:")
+        return pck.content.substring(indIP, indPORT)
+        return pck.content.substringAfterLast("IP:")
+    }
+    private fun extractPORT(scannedText: String): Int {
+        val pck = PackageData.deserializePck(scannedText)
+        return pck.content.substringAfterLast("PORT:").toInt()
+    }
     @SuppressLint("SuspiciousIndentation")
     private suspend fun deleteAllDatabaseEntries() {
         withContext(Dispatchers.IO) {

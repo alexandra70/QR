@@ -191,6 +191,7 @@ open class ReaderQR : AppCompatActivity() {
                             /* Store the time for the first frame */
                             /* Scanning process should start after timeBeforeSeq + latestAnalyzedTimestamp is >= than
                                 * the time stamp of current analyzed photo */
+                            Log.d("FIRST", "here")
 
                             if (checkFirstPck(result)) {
 
@@ -304,7 +305,7 @@ open class ReaderQR : AppCompatActivity() {
         try {
             val mediaImage = imageProxy.image ?: run {
                 readFailureCounter += 1
-                if (readFailureCounter >= 15){
+                if (readFailureCounter >= SenderReaderVars.FAIL_COUNT_TRIGGER){
                     sendAckToSender(connectionSocket, -2, 0)
                     readFailureCounter = 0
                 }
@@ -327,7 +328,7 @@ open class ReaderQR : AppCompatActivity() {
                             "Poza neclara"
                         )
                         readFailureCounter += 1
-                        if (readFailureCounter >= 15) {
+                        if (readFailureCounter >= SenderReaderVars.FAIL_COUNT_TRIGGER) {
                             sendAckToSender(connectionSocket, -2, 0)
                             readFailureCounter = 0
                         }
@@ -411,7 +412,7 @@ open class ReaderQR : AppCompatActivity() {
                     if (!isDestroyed) {
                         //imageProxy.close()
                         readFailureCounter += 1
-                        if (readFailureCounter >= 15){
+                        if (readFailureCounter >= SenderReaderVars.FAIL_COUNT_TRIGGER){
                             sendAckToSender(connectionSocket, -2, 0)
                             readFailureCounter = 0
                         }

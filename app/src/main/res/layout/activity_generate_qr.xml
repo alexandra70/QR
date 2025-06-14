@@ -18,7 +18,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_below="@id/button_generate_qr_text"
-        android:text="Show Files System" />
+        android:text="OPEN FILE" />
 
     <FrameLayout
         android:layout_below="@id/file_system"

@@ -24,6 +24,8 @@ object SenderReaderVars {
     val SLICING_FACTOR = 2
     val MIN_SLICE_SIZE = 16
 
+    val FAIL_COUNT_TRIGGER = 30
+
 
     //cat ar trebui sa fie lungimea totala a unui frame-pachet pe care
     //il voi afisa folosind qr insert text

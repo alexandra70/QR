@@ -217,7 +217,8 @@ class FilesSystem : Fragment() {
 
                     /* --------------------last frame------------------------------- */
                     localQRGenerateLastFrame("END")
-                    val ackId = ackChannel.receive()
+                    while(ackChannel.receive() != -1){}
+                    Log.d("END_ACK_CODE_RECEIVED", "bla")
                     /* --------------------------------------------------- */
 
                     requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(null)
@@ -470,6 +471,7 @@ class FilesSystem : Fragment() {
 
         //pregatire date de codificat
         val data = PackageData.serializePck(packageData)
+        Log.d("PROC_QR", "face qr")
 
         val bitmap = generateQRCode(
             data,
@@ -477,7 +479,7 @@ class FilesSystem : Fragment() {
             errorCorrectionLevel = ErrorCorrectionLevel.L
         ) //val qrEncoder = QRGEncoder(data, null, QRGContents.Type.TEXT, dimen)
         if (bitmap != null) {
-
+            Log.d("GEN_QR", "qr nenul")
             requireView().findViewById<ImageView>(R.id.imageQR).setImageBitmap(bitmap)
             return true
         }

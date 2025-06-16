@@ -1,15 +1,18 @@
 package com.example.myqrapp
 
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Point
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.os.SystemClock
+import android.util.Base64
 import android.util.Log
 import android.view.Display
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
@@ -26,10 +29,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
 import java.net.ServerSocket
+import java.net.Socket
 import java.util.zip.CRC32
-import kotlin.time.TimeSource
+import kotlin.math.max
+import kotlin.math.min
 
 open class GenerateQRText : AppCompatActivity() {
 
@@ -39,12 +45,21 @@ open class GenerateQRText : AppCompatActivity() {
     lateinit var msgEdt: EditText
     lateinit var generateQRBtn: Button
 
-    lateinit var database: PackageDataDB
-    lateinit var dao: PackageDataDao
+    lateinit var database: BytePackageDataDB
+    lateinit var dao: BytePackageDataDao
 
     private val ackChannel = Channel<Int>(Channel.UNLIMITED)
-    private var serverStarted = false
-    private var serverSocket: ServerSocket? = null
+    private val sizeChannel = Channel<Int>(Channel.UNLIMITED)
+    private var ackCounter: Int = 0
+
+    private var packageNumber: Int = 1
+    private val maxSliceSize: Int = SenderReaderVars.payloadLength
+    private var sliceSize: Int = maxSliceSize
+
+    private var fileName: String = "insert_result.txt"
+
+    private lateinit var serverSocket: ServerSocket
+    private lateinit var client: Socket
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,7 +72,7 @@ open class GenerateQRText : AppCompatActivity() {
         msgEdt = findViewById(R.id.idEdt)
         generateQRBtn = findViewById(R.id.ButonGenerareQREfectiva)
 
-        database = PackageDataDB.getDatabase(applicationContext)
+        database = BytePackageDataDB.getDatabase(applicationContext)
         dao = database.dao
 
         startAckServer()
@@ -67,8 +82,7 @@ open class GenerateQRText : AppCompatActivity() {
             if(!msgEdt.text.toString().isNullOrEmpty()) {
 
                 lifecycleScope.launch {
-                    nrPck = 0
-                    deleteAllDatabaseEntries()
+                    deleteAllDatabaseEntriesByteArray(this@GenerateQRText)
                     //constructie pachete
                     val success = stringBreak(msgEdt.text.toString())
                     if (success) {
@@ -77,18 +91,8 @@ open class GenerateQRText : AppCompatActivity() {
                         Log.i(ContentValues.TAG, "Failed to process String correctly")
                     }
 
-                    //trimit primul pachet de cateva ori - >
-                    var timeStart = SenderReaderVars.initialSyncTimeMs // 7s? >> time
-
-                    val startTimeTest = SystemClock.elapsedRealtime()
-                    Log.d(
-                        "cand incepe",
-                        (startTimeTest).toString()
-                    )
-
-
                     //               ACK PCK 0                 //
-                    processFirstPck(timeStart)
+                    processFirstPck()
                     val firstAck = ackChannel.receive()
                     if (firstAck != 0) {
                         Log.e("SYNC", "ACK invalid pentru primul pachet ($firstAck), opresc transmisia")
@@ -97,36 +101,69 @@ open class GenerateQRText : AppCompatActivity() {
                     Log.d("SYNC", "ACK primit pentru pachetul 0, începem transmisia cadrului principal")
 
 
-
-                    val endTimeTest = SystemClock.elapsedRealtime()
-
-                    Log.d(
-                        "cand se terimna, dar diferenta",
-                        (endTimeTest - startTimeTest).toString()
-                    )
-
                     //       ACK SEQ                           //
                     val packageDataList = dao.getPckDataBySEQnr().first()
                     val iterator = packageDataList.iterator()
-                    val timeSource = TimeSource.Monotonic
+
+                    var iteratii = 0
 
                     while (iterator.hasNext()) {
-                        // time0 = time
-                        val mark = timeSource.markNow()
-                        val packageData = iterator.next()
-                        val content = packageData.content
-                        Log.d(ContentValues.TAG, "Processing content: $content")
-                        localQRGenerate(packageData)
-                        // delta = time - time0 => delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
 
-                        val ackId = ackChannel.receive()
-                        if (ackId != packageData.pckId) {
-                            Log.e("SYNC", "Pachetul primit ($ackId) nu corespunde cu cel trimis (${packageData.pckId})")
-                            break
+                        iteratii++
+                        Log.d("nr inter", iteratii.toString())
+
+                        val packageData = iterator.next()
+                        var sent = 0
+                        val content = packageData.byteArray
+
+                        while (sent < content.size){
+                            //packageData.pckId = packageNumber
+                            val bytesToSend = content.copyOfRange(sent,
+                                min(content.size,sent + sliceSize)
+                            )
+                            val dataToSend = Base64.encodeToString(bytesToSend, Base64.NO_WRAP)
+                            val pckToSend = PackageData(packageNumber, computeCRC(dataToSend), dataToSend.length, dataToSend)
+
+                            Log.d(ContentValues.TAG, "Processing content: $dataToSend")
+                            localQRGenerate(pckToSend)
+                            // delta = time - time0  = > delay(SenderReaderVars.packetDelayMs - (timeSource.markNow() - mark).inWholeMilliseconds) // - delta
+
+                            // wait ACK pentru pachetul primit
+                            val ackId = ackChannel.receive()
+                            Log.d("POINT", "($packageNumber) (${dataToSend.length}))")
+                            if(ackId == packageNumber){
+                                val lengthRead = sizeChannel.receive()
+                                ackCounter += 1
+                                if(ackCounter >= 4){
+                                    sliceSize = min(maxSliceSize, sliceSize * SenderReaderVars.SLICING_FACTOR)
+                                    ackCounter = 0
+                                }
+                                Log.d("YEP", "($packageNumber) citit corect ($ackCounter)")
+                                packageNumber += 1
+                                sent += lengthRead
+                            }
+                            else if(ackId == -2){
+                                ackCounter = 0
+                                sliceSize = max(sliceSize / SenderReaderVars.SLICING_FACTOR, SenderReaderVars.MIN_SLICE_SIZE)
+                                Log.d("NOPE", "cerere de micsorare")
+                            }
+                            else if (ackId != packageData.pckId) {
+                                Log.e("SYNC", "Pachetul primit ($ackId) nu corespunde cu cel trimis (${packageData.pckId})")
+                                //break
+                            }
                         }
+
                     }
+
+                    localQRGenerateLastFrame("END")
+                    while(ackChannel.receive() != -1){}
+                    Log.d("END_ACK_CODE_RECEIVED", "bla")
+                    /* --------------------------------------------------- */
+
                     qrIV.setImageBitmap(null)
-                    //textEncodeDataButtonPressed.text = stringBuilder.toString()
+
+                    onDestroy()
+
                 }
             }
         }
@@ -134,11 +171,8 @@ open class GenerateQRText : AppCompatActivity() {
 
     private suspend fun stringBreak(textInserted: String): Boolean {
 
-        var chunkSize =
-            SenderReaderVars.payloadLengthForInsertedText - SenderReaderVars.exceptPayloadForInsertedText //chr per pachet(bytes?)
 
-        /* todo */
-        chunkSize = 1
+        var chunkSize = SenderReaderVars.payloadLength
 
         if (textInserted.isEmpty()) return false
 
@@ -151,15 +185,18 @@ open class GenerateQRText : AppCompatActivity() {
 
         withContext(Dispatchers.IO) {
             for ((index, chunk) in chunks.withIndex()) {
-                val crc = computeCRC(chunk)
+                val chunkBytes: ByteArray = chunk.toByteArray(Charsets.UTF_8)
+
+                val base64Payload = Base64.encodeToString(chunkBytes, Base64.NO_WRAP)
+                val crc = computeCRC(base64Payload)
 
                 database.dao.insertPck(
-                    PackageData(
+                    BytePackageData(
                         index + 1,
-                        crc,
                         chunk.length,
-                        chunk
-                    ))
+                        chunkBytes
+                    )
+                )
                 Log.d("ce adaug in db",index.toString() + " " + chunk.length + " " + "caut ce adaug in db   ")
                 nrPck++
             }
@@ -167,30 +204,42 @@ open class GenerateQRText : AppCompatActivity() {
         return true
     }
 
-    fun getLocalIpAddress(): String {
-        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val ip = wm.connectionInfo.ipAddress
-        //asta o sa mearga numai pt ipv4si numai in retele wifi
-        return String.format("%d.%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff)
-    }
-
     private fun startAckServer() {
-        if (serverStarted) return
-        serverStarted = true
-
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 serverSocket = ServerSocket(SenderReaderVars.PORT)
+                client = serverSocket.accept()
                 while (true) {
-                    val client = serverSocket!!.accept()
                     val reader = BufferedReader(InputStreamReader(client.getInputStream()))
                     val ack = reader.readLine()
                     Log.d("ACK_SERVER", "Primit: $ack")
+
                     if (ack.startsWith("ACK:")) {
-                        val id = ack.removePrefix("ACK:").toIntOrNull()
-                        id?.let { ackChannel.send(it) }
+                        val parts = ack.split(":")
+                        if (parts.size >= 3) {
+                            val id = parts[1].toIntOrNull()
+                            val length = parts[2].toIntOrNull()
+                            Log.d("ACK_RECEIVED", "Pachet $id cu lungime $length")
+
+                            if (id == -1){
+                                withContext(Dispatchers.Main) {
+                                    this@GenerateQRText.finish()
+                                }
+                                Log.d("CLOSE_CONN", "All database entries deleted")
+                                break
+                            }
+
+                            if (id != null) {
+                                ackChannel.send(id)
+                                if(id > 0 && length != null){
+                                    sizeChannel.send(length)
+                                }
+                            }
+
+                        } else {
+                            Log.e("ACK_SERVER", "Format invalid: $ack")
+                        }
                     }
-                    client.close()
                 }
             } catch (e: Exception) {
                 Log.e("ACK LA SENDER", "Eroare server", e)
@@ -200,41 +249,144 @@ open class GenerateQRText : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        serverSocket?.close()
+
+        try {
+            client.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+
+        try {
+            serverSocket.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+
+        Log.d("CLOSE SOCKETS","Sockets closed in onDestroy (Fragment)...")
     }
-    private fun processFirstPck(time: Long) {
+
+    @SuppressLint("SuspiciousIndentation")
+    private suspend fun deleteAllDatabaseEntriesByteArray(context: Context) {
+        val database = BytePackageDataDB.getDatabase(context)
+        val dao = database.dao
+        withContext(Dispatchers.IO) {
+            dao.deleteAll()
+        }
+        Log.d(ContentValues.TAG, "All database entries deleted")
+    }
+
+    fun getLocalIpAddress(): String {
+        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val ip = wm.connectionInfo.ipAddress
+        return String.format("%d.%d.%d.%d", ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff)
+    }
+    private fun processFirstPck() {
 
         val stringBuilder = StringBuilder()
-        stringBuilder.append("Time:")
-        stringBuilder.append(time.toString())
 
-        stringBuilder.append("NrPck:")
-        stringBuilder.append(nrPck.toString())
-
-        stringBuilder.append("FramesTime:")
-        stringBuilder.append(SenderReaderVars.packetDelayMs)
+        stringBuilder.append("FileName:")
+        stringBuilder.append(fileName)
 
         val ip = getLocalIpAddress()
         stringBuilder.append("IP:$ip")
 
-        //send data
-        localQRGenerate(
-            PackageData(
-                0,
-                0,
-                5 + time.toString().length
-                        + 6 + nrPck.toString().length
-                        + 11 + SenderReaderVars.packetDelayMs.toString().length
-                        + 3 + ip.toString().length,
-                stringBuilder.toString()
-            )
-        )
+        val port = SenderReaderVars.PORT
+        stringBuilder.append("PORT:$port")
 
-        println("timpul de procesaer si cum arata payload : " + stringBuilder.toString() + " " + time + "cate pachete " + nrPck)
+        //send data
+        localQRGenerate(PackageData(
+            0,
+            0,
+            9 + fileName.toString().length
+                    + 3 + ip.toString().length
+                    + 5 + port.toString().length,
+            stringBuilder.toString()
+        ))
+    }
+    private suspend fun readFileContent(context: Context, uri: Uri?): Boolean {
+        val database = BytePackageDataDB.getDatabase(context)
+
+        var chunkSize =
+            SenderReaderVars.payloadLength // - SenderReaderVars.exceptPayload //chr per pachet(bytes?)
+
+        if (uri != null) {
+            return try {
+                val inputStream =
+                    withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri) }
+                var bytesRead: Int
+                val buffer = ByteArray(chunkSize)
+                var i = 0
+                inputStream?.use { stream ->
+                    while (withContext(Dispatchers.IO) {
+                            stream.read(buffer).also { bytesRead = it }
+                        } != -1) {
+                        val chunk = buffer.copyOfRange(0, bytesRead)
+
+                        //val chunkString = String(chunk, Charset.forName("ISO-8859-1"))
+                        val chunkString = Base64.encodeToString(chunk, Base64.NO_WRAP)
+
+                        Log.d("chunk", chunk.joinToString(separator = "") { eachByte -> "%02x".format(eachByte) })
+
+                        Log.d("chunkString",  chunkString)
+
+                        // Base64.encodeToString(chunk, 0)
+                        //stringBuilder.append(chunkString)
+                        //sa vad daca e mai bine asa ? val payload = String(chunk, Charsets.ISO_8859_1)
+                        val crc = computeCRC(chunkString)
+                        i++
+                        withContext(Dispatchers.IO) {
+                            database.dao.insertPck(
+                                BytePackageData(
+                                    i,
+                                    chunk.size,
+                                    chunk
+                                )
+                            )
+                        }
+
+                        nrPck++;
+                    }
+                }
+                //Log.d(TAG, "Conținutul fișierului: $stringBuilder")
+                true
+            } catch (e: IOException) {
+                Log.e(ContentValues.TAG, "Eroare la citirea fișierului", e)
+                false
+            }
+        } else {
+            return false
+        }
+    }
+
+    fun localQRGenerateLastFrame(endString: String): Boolean {
+
+        val windowManager = applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val display: Display = windowManager.defaultDisplay
+        val point = Point()
+        display.getSize(point)
+
+        val width = point.x
+        val height = point.y
+        var dimen = if (width < height) width else height
+
+        dimen = (dimen * SenderReaderVars.qrSizeScaleFactor).toInt() //dimen = dimen * 3 / 4
+
+        val bitmap = generateQRCode(
+            endString,
+            dimen,
+            errorCorrectionLevel = ErrorCorrectionLevel.L
+        ) //val qrEncoder = QRGEncoder(data, null, QRGContents.Type.TEXT, dimen)
+        if (bitmap != null) {
+
+            qrIV.setImageBitmap(bitmap)
+            return true
+        }
+        return false
     }
 
     fun localQRGenerate(packageData: PackageData): Boolean {
 
+        val windowManager = applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val display: Display = windowManager.defaultDisplay
         val point = Point()
         display.getSize(point)
@@ -247,6 +399,7 @@ open class GenerateQRText : AppCompatActivity() {
 
         //pregatire date de codificat
         val data = PackageData.serializePck(packageData)
+        Log.d("PROC_QR", "face qr")
 
         val bitmap = generateQRCode(
             data,
@@ -254,12 +407,12 @@ open class GenerateQRText : AppCompatActivity() {
             errorCorrectionLevel = ErrorCorrectionLevel.L
         ) //val qrEncoder = QRGEncoder(data, null, QRGContents.Type.TEXT, dimen)
         if (bitmap != null) {
+            Log.d("GEN_QR", "qr nenul")
             qrIV.setImageBitmap(bitmap)
             return true
         }
         return false
     }
-
     private fun computeCRC(text: String): Long {
         val crc = CRC32()
         crc.update(text.toByteArray(Charsets.UTF_8))
@@ -273,7 +426,8 @@ open class GenerateQRText : AppCompatActivity() {
     ): Bitmap? {
         return try {
             val hints = mapOf(
-                EncodeHintType.CHARACTER_SET to "UTF_8",
+                //EncodeHintType.CHARACTER_SET to "ISO-8859-1",
+                EncodeHintType.CHARACTER_SET to "UTF-8",
                 EncodeHintType.ERROR_CORRECTION to errorCorrectionLevel,
                 EncodeHintType.MARGIN to 1 // o margine mai putin groasa in jurul codului
             )
@@ -301,12 +455,5 @@ open class GenerateQRText : AppCompatActivity() {
             e.printStackTrace()
             null
         }
-    }
-
-    private suspend fun deleteAllDatabaseEntries() {
-        withContext(Dispatchers.IO) {
-            dao.deleteAll()
-        }
-        Log.d(ContentValues.TAG, "All database entries deleted")
     }
 }

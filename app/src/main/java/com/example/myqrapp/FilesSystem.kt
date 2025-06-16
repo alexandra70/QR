@@ -55,7 +55,6 @@ class FilesSystem : Fragment() {
     private val stringBuilder = StringBuilder()
     private lateinit var filePicker: ActivityResultLauncher<Intent>
     private var processData: Boolean = false
-    private var nrPck = 0
 
     private val ackChannel = Channel<Int>(Channel.UNLIMITED)
     private val sizeChannel = Channel<Int>(Channel.UNLIMITED)
@@ -104,7 +103,6 @@ class FilesSystem : Fragment() {
 
                         //reset daca a fost ales cumva un alt fiseri intre timp
                         stringBuilder.clear()
-                        nrPck = 0
 
                         lifecycleScope.launch {
 
@@ -137,15 +135,9 @@ class FilesSystem : Fragment() {
                 //val textEncodeDataButtonPressed = view.findViewById<TextView>(R.id.filePrintableData)
                 lifecycleScope.launch {
                     fetchLocation()
-                    //delay(1000)
-                    //send first pck x times - each time will update the payload with the remaining time
-                    //val database = PackageDataDB.getDatabase(requireContext())
-                    //val dao = database.dao
-
 
                     val database = BytePackageDataDB.getDatabase(requireContext())
                     val dao = database.dao
-                    var timeStart = SenderReaderVars.initialSyncTimeMs // 7s? >> time
 
                     val startTimeTest = SystemClock.elapsedRealtime()
                     Log.d(
@@ -414,8 +406,6 @@ class FilesSystem : Fragment() {
                                 )
                             )
                         }
-
-                        nrPck++;
                     }
                 }
                 //Log.d(TAG, "Conținutul fișierului: $stringBuilder")

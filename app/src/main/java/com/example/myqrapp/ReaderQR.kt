@@ -53,7 +53,7 @@ open class ReaderQR : AppCompatActivity() {
     private lateinit var databaseR: BytePackageDataDB
     private lateinit var daoR: BytePackageDataDao
     private lateinit var connectionSocket: Socket
-    private lateinit var outPrintWriter: PrintWriter
+    private var outPrintWriter: PrintWriter? = null
     private var readFailureCounter: Int = 0
 
     private val firstFrame = AtomicInteger(0)
@@ -434,7 +434,7 @@ open class ReaderQR : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 Log.d("sendAckToSender", "inainte sa trimit ack reader")
-                outPrintWriter.println("ACK:$pckId:$pckBytesArrayLength")
+                outPrintWriter?.println("ACK:$pckId:$pckBytesArrayLength")
                 Log.d("sendAckToSender", "dupa ce am trimis ack reader")
             } catch (e: Exception) {
                 Log.e("ACK READER QR", "nu merge ack in reader....", e)
@@ -446,15 +446,15 @@ open class ReaderQR : AppCompatActivity() {
         super.onStop()
         Log.d("ReaderQR", "onStop called")
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        //lifecycleScope.launch(Dispatchers.IO) {
             try {
                 Log.d("sendAckToSender", "premature destroy")
-                outPrintWriter.println("ACK:-1:0")
+                outPrintWriter?.println("ACK:-1:0")
                 connectionSocket.close()
             } catch (e: Exception) {
                 Log.e("ACK READER QR", "...", e)
             }
-        }
+        //}
         try {
             Log.d("ReaderQR", "onStop - shutting down camera and executor")
             cameraProvider?.unbindAll()
